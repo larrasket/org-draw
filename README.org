@@ -2,122 +2,135 @@
 :PROPERTIES:
 :CUSTOM_ID: org-pad.el
 :END:
-Seamless iPad drawing into org-mode.
+Seamless drawing into org-mode — from your iPad, or any device, in a browser.
 
-# [[https://img.shields.io/badge/license-GPLv3-blue.svg]] [[https://img.shields.io/badge/Emacs-28.1%2B-7F5AB6.svg]] [[https://img.shields.io/badge/iPadOS-16%2B-black.svg]] [[https://img.shields.io/badge/also-web%20canvas-1e88e5.svg]] [[https://img.shields.io/badge/no%20Xcode-no%20App%20Store-2ea44f.svg]]
+# [[https://img.shields.io/badge/license-GPLv3-blue.svg]] [[https://img.shields.io/badge/Emacs-28.1%2B-7F5AB6.svg]] [[https://img.shields.io/badge/canvas-tldraw-1e88e5.svg]] [[https://img.shields.io/badge/no%20app-just%20a%20browser-2ea44f.svg]]
 
-org-pad lets you draw on your iPad with Apple Pencil and have the result in your org-mode buffer as an inline figure.
+org-pad lets you draw on your iPad with Apple Pencil — or on any device in a
+web browser — and have the result land in your org-mode buffer as an inline,
+re-editable figure.
 
 ** Demo
 :PROPERTIES:
 :CUSTOM_ID: demo
 :END:
 
-[[https://www.youtube.com/watch?v=q_te8iX-Cjo][https://img.youtube.com/vi/q_te8iX-Cjo/0.jpg]] 
+[[https://www.youtube.com/watch?v=q_te8iX-Cjo][https://img.youtube.com/vi/q_te8iX-Cjo/0.jpg]]
 
+
+[[file:figures/fig-20260814-204400.png]]
 
 ** Get started, one-time setup
 :PROPERTIES:
 :CUSTOM_ID: one-time-setup
 :END:
-1. [iPadOS only, if you want native experience] On the iPad, install Swift Playgrounds from the App Store (it's free). This is the only App-Store install required; the OrgPad app itself is never distributed through the App Store.
-2. In Emacs, run =M-x org-pad-setup=. This starts the org-pad server,
-   generates a fresh 6-digit pairing code, and opens a =*org-pad setup*=
-   buffer listing one or more setup URLs, one per LAN network interface
-   Emacs can see (e.g. =http://192.168.1.23:8777/setup=). 
-3. If you are using anything that is not iPadOS: 
-   - Open the URL for web browser experience.
-   - In emacs, in an org-mode buffer, run =M-x org-pad-draw= or use the =org-pad-menu=.
-4. On the iPad, open Safari and visit the setup URL. The page lets you
-   download and open =OrgPad.swiftpm= directly into Swift Playgrounds.
-5. Inside Swift Playgrounds, tap *Run*. The app opens on a connect
-   screen asking for a 6-digit code.
-6. Enter the code shown in the =*org-pad setup*= buffer (you might need to paste it directly instead of typing it). On success the iPad is paired and remembers the server for future sessions (via a token persisted in =org-pad-token-file= on the Emacs side). The code is single-use and expires after 5 wrong attempts. Re-run =M-x org-pad-setup= to get a new one if that happens.
+No app install, no App Store, no developer account — just a browser.
 
-You only need to repeat this flow when pairing a new iPad, after
-clearing =org-pad-token-file=, or if the code expires before you finish
-entering it.
+1. In Emacs, run =M-x org-pad-setup=. This starts the org-pad server,
+   generates a fresh 6-digit pairing code, and opens a =*org-pad setup*=
+   buffer listing one or more receiver URLs, one per LAN address Emacs can
+   see (e.g. =http://192.168.1.23:8777/canvas=, plus an IP-stable =.local=
+   address that keeps working even when your IP changes).
+2. On the iPad (or any device on the same network), open one of those
+   =/canvas= URLs in a browser. The first time, enter the 6-digit code to
+   pair; the browser stores its own token right on the page. Leave the tab
+   open.
+3. That tab is now a *receiver*: it long-polls the server and picks up every
+   drawing request. The code is single-use and expires after 5 wrong
+   attempts — re-run =M-x org-pad-setup= to get a new one.
+
+You only need to pair once per browser (until you clear its stored token, or
+=org-pad-token-file= on the Emacs side).
 
 ** Usage
 :PROPERTIES:
 :CUSTOM_ID: daily-use
 :END:
-- Place point where you want a new figure and run =M-x org-pad-draw= (or bind it to a key). Emacs starts the server if it isn't already running and queues a “new drawing” request; a message tells you to open OrgPad on the iPad (or, if it's already open and idle, it will pick the request up immediately via its long poll). When you finish drawing and tap done, the PNG comes back and org-pad inserts an =[[file:...]]= link to it at point.
-- Place point on an existing org-pad figure link and run =M-x org-pad-draw= (or =M-x org-pad-edit=) to re-open it for editing. Because the original strokes are embedded in the PNG, the iPad app reconstructs your drawing exactly as you left it, this is the “self-contained PNG” format at work. Editing a plain PNG that wasn't produced by org-pad (no embedded strokes) is refused with a clear error, since there is nothing to reconstruct from.
-- =org-pad-draw= is DWIM: on a re-editable figure link it edits; anywhere else it creates a new figure at point.
-- The server keeps running across multiple draw requests; use =M-x org-pad-server-stop= to shut it (and the Bonjour advertisement) down, e.g. before switching networks or ending your Emacs session.
-- =M-x org-pad-menu= opens a transient menu with draw / edit / setup, the client toggle, the figure background, and server start/stopm a convenient single entry point if you don't want to remember commands.
-** Drawing on the web instead of the iPad
+- Place point where you want a new figure and run =M-x org-pad-draw= (or bind
+  it to a key). Emacs starts the server if needed and queues a “new drawing”
+  request; the open receiver tab picks it up immediately and switches into
+  drawing mode. When you tap *Done*, the PNG comes back and org-pad inserts an
+  =[[file:...]]= link to it at point.
+- Place point on an existing org-pad figure link and run =M-x org-pad-draw=
+  (or =M-x org-pad-edit=) to re-open it for editing. The original strokes are
+  stored inside the PNG, so the canvas reconstructs your drawing exactly as
+  you left it. Editing a plain PNG that org-pad didn't produce (no embedded
+  strokes) is refused with a clear error.
+- =org-pad-draw= is DWIM: on a re-editable figure link it edits; anywhere else
+  it creates a new figure at point.
+- The server keeps running across draw requests; =M-x org-pad-server-stop=
+  shuts it down.
+- =M-x org-pad-menu= opens a transient menu (draw / edit / setup, figure
+  background, server start/stop) — a single entry point if you'd rather not
+  remember the commands.
+
+** The canvas
 :PROPERTIES:
-:CUSTOM_ID: drawing-on-the-web-instead-of-the-ipad
+:CUSTOM_ID: the-canvas
 :END:
-The web canvas is [[https://github.com/tldraw/tldraw][tldraw]] .
+The drawing surface is [[https://github.com/tldraw/tldraw][tldraw]] — the professional infinite-canvas engine —
+with pressure-sensitive Apple Pencil ink, one- and two-finger pan, pinch-zoom,
+palm rejection, shapes, arrows, text and undo/redo. Pressing *Done* exports a
+PNG cropped to your drawing and stores a tldraw snapshot alongside it, so the
+figure re-opens in the canvas exactly as you left it.
 
-tldraw is loaded from a CDN, so the device needs internet
-access the first time it opens the page.  
+Two things to know:
 
-It works as a receiver, just like the native app's Waiting screen:
+- tldraw is loaded from a CDN, so the device needs internet access the first
+  time it opens the page (on an offline network the page shows a clear message
+  instead of a blank screen).
+- tldraw shows a small "made with tldraw" watermark under its free license;
+  set a license key to remove it (=window.ORGPAD_TLDRAW_LICENSE=, or a
+  =tldraw_license= field on the injected config).
 
-1. Set =org-pad-client= to =web= (or =ask=).
-2. Run =M-x org-pad-setup=. Alongside the iPad instructions it lists a
-   receiver URL (e.g. =http://192.168.1.23:8777/canvas=).
-3. Open that URL once on the iPad (or any device) and, the first time,
-   enter the same 6-digit code to pair, the browser stores its own
-   token, right on the page. Leave the tab open.
-4. From then on, every =M-x org-pad-draw= (with =org-pad-client= =web=)
-   is picked up by that open tab, it long-polls the server exactly
-   like the native app, switches into drawing mode, and posts the figure
-   back when you tap Done, then returns to waiting for the next one.
 ** Customization
 :PROPERTIES:
 :CUSTOM_ID: customization
 :END:
 All options live in the =org-pad= customization group
-(=M-x customize-group RET org-pad RET=), or set them directly in your
-init file:
+(=M-x customize-group RET org-pad RET=), or set them directly in your init
+file:
 
-- =org-pad-port= (default =8777=) 
-- =org-pad-directory= (default ="figures"=) 
+- =org-pad-port= (default =8777=)
+- =org-pad-directory= (default ="figures"=)
 - =org-pad-file-name-function= (default =org-pad-default-file-name=)
-- =org-pad-insert-attr-width= (default =nil=) when set to an integer
-  pixel width, org-pad inserts a =#+ATTR_ORG: :width N= line above the
-  link to a newly created figure, so it displays at a fixed width
-  inline. Leave it =nil= to skip the ATTR line entirely.
+- =org-pad-insert-attr-width= (default =nil=) when set to an integer pixel
+  width, org-pad inserts a =#+ATTR_ORG: :width N= line above the link to a
+  newly created figure, so it displays at a fixed width inline. Leave it =nil=
+  to skip the ATTR line entirely.
 - =org-pad-token-file= (default =<user-emacs-directory>/org-pad-tokens=)
-- =org-pad-figure-background= (default =transparent=) the default exported (result) background baked behind a figure's ink. =transparent= keeps true ink colors and alpha and shows the figure against your org buffer's background (so a white pen shows in a dark theme and a black pen in a light theme); or set it to =white=, =dark=, or a specific color string to bake that behind every figure. This is the default the client starts with; you can override it per-drawing in the app's background menu. Note the app's surface (what you see while drawing) is a separate, on-device choice and never affects the export.
-- =org-pad-client= (default =native=) which drawing surface =org-pad-draw= uses for a /new/ figure: =native= (iPad app), =web= (browser canvas), or =ask= (prompt each time). Editing an existing figure always re-opens on whichever surface created it, regardless of this setting.
-- =org-pad-web-canvas-file=  path to the web canvas HTML served at
-  =/canvas= (defaults to =web/canvas.html= shipped with the package).
-- =org-pad-web-open-function= (default =nil=) when non-nil (e.g.
-  =browse-url=), =org-pad-draw=.
+- =org-pad-figure-background= (default =transparent=) the background baked
+  behind a figure's ink in the exported PNG. =transparent= keeps true ink
+  colors and shows the figure against your org buffer's background (so a white
+  pen shows in a dark theme and a black pen in a light theme); or set it to
+  =white=, =dark=, or a CSS color string to bake that behind every figure.
+- =org-pad-web-canvas-file= path to the web canvas HTML served at =/canvas=
+  (defaults to =web/canvas.html= shipped with the package).
+- =org-pad-web-open-function= (default =nil=) when non-nil (e.g. =browse-url=),
+  =org-pad-draw= also opens the per-session =/canvas= URL on the machine
+  running Emacs, in addition to the receiver tab picking it up. Leave =nil= to
+  rely solely on the open receiver tab.
+
 ** Notes
 :PROPERTIES:
-:CUSTOM_ID: the-self-contained-png-format
+:CUSTOM_ID: notes
 :END:
+Every figure org-pad writes is a normal PNG with a private ancillary chunk
+named =orPd= inserted before =IEND=, containing a format byte followed by the
+drawing data (a tldraw snapshot — strokes, not pixels) and covered by the
+standard PNG CRC32 like any other chunk. This is what makes re-editing
+possible: =org-pad-edit= reads the =orPd= chunk back out and ships it to the
+canvas, which restores your drawing exactly. PNGs without an =orPd= chunk
+(screenshots, images from elsewhere) are treated as non-editable.
 
+Pending draw requests live in memory in the running Emacs process. If you
+restart Emacs (or it crashes) before the receiver tab has picked up and
+returned a queued drawing, that request is lost and you'll need to run
+=org-pad-draw= again.
 
-With Snap shapes on, a rough freehand line, rectangle, ellipse,
-triangle, or arrow is cleaned up to crisp geometry the moment you lift
-the pencil; real handwriting is detected and left untouched (the
-recognizer is tuned to never snap cursive or scribbles). With *Smooth*
-on, raw ink is de-jittered without changing what you wrote.
-
-=org-pad-draw= queues a drawing request that the iPad app picks up the
-moment it's foregrounded, the app long-polls the server, and
-returning to it (from the Dock, the app switcher, or by tapping its
-icon) delivers a pending request immediately, without waiting. 
-
-Every figure org-pad writes is a normal PNG with  a private ancillary chunk
-named =orPd= inserted before =IEND=, containing a version byte followed
-by the original PencilKit drawing data (strokes, not pixels) and covered
-by the standard PNG CRC32 like other chunk. This is for making reediting possible, =org-pad-edit= reads the =orPd= chunk back
-out, ships it to the iPad, and PencilKit resumes exactly where you left
-off. PNGs without an =orPd= chunk (screenshots, images from elsewhere)
-are treated as non-editable and =org-pad-edit= an error.
-
-Pending draw requests live in memory in the running Emacs process. If you restart Emacs (or it crashes) before the iPad has picked up and returned a queued drawing, that request is lost and you'll need to run =org-pad-draw= again.
-
-I tested with macOS, but Linux should work too (the mDNS advertisement uses =avahi-publish= (install =avahi-utils= and run =avahi-daemon=)), and everything else is platform-agnostic.
+Tested on macOS; Linux and other platforms work too — the server is pure
+Elisp and platform-agnostic. Prefer the =.local= receiver URL: it resolves via
+mDNS to the machine's current IP, so it keeps working even when the IP changes.
 
 ** License
 :PROPERTIES:

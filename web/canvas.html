@@ -71,32 +71,33 @@
     border-radius: 16px;
   }
 
-  /* ---- OrgPad action bar (Done / Cancel / status), top-center ---- */
-  #orgbar {
-    position: fixed; z-index: 500;
-    top: calc(var(--safe-t) + 10px);
-    left: 50%; transform: translateX(-50%);
-    display: flex; align-items: center; gap: 10px;
-    padding: 7px 8px 7px 14px;
-    max-width: calc(100vw - 20px);
-  }
-  #orgbar .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); flex: 0 0 auto; }
-  #orgbar .brand { font-weight: 700; letter-spacing: .2px; }
-  #orgbar #status { color: var(--text-dim); font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 34vw; }
-  #orgbar #build { font-size: 11px; font-weight: 700; letter-spacing: .3px; color: var(--accent); opacity: .85; }
-  #orgbar button {
+  /* ---- OrgPad actions injected into tldraw's top-right (SharePanel) zone ---- */
+  .orgpad-share { display: flex; align-items: center; gap: 6px; pointer-events: all; }
+  .orgpad-share .orgpad-done {
     -webkit-appearance: none; appearance: none;
-    min-height: 38px; padding: 0 16px; border-radius: 12px;
-    border: 1px solid transparent; background: transparent; color: var(--text);
-    font: inherit; font-weight: 600; cursor: pointer;
+    height: 34px; padding: 0 15px; border-radius: 10px; border: none;
+    background: var(--accent); color: #fff; cursor: pointer;
+    font: 600 14px/1 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    box-shadow: 0 2px 8px rgba(10,132,255,0.42);
     transition: background .12s ease, transform .06s ease;
   }
-  #orgbar button:active { transform: scale(.96); }
-  #orgbar button.primary { background: var(--accent); color: var(--accent-ink); box-shadow: 0 3px 12px rgba(10,132,255,0.5); }
-  #orgbar button.primary:hover { background: #2a95ff; }
-  #orgbar button.ghost:hover { background: rgba(127,127,127,0.14); }
-  #orgbar button:disabled { opacity: .45; cursor: default; }
-  @media (max-width: 640px) { #orgbar .brand, #orgbar #build { display: none; } }
+  .orgpad-share .orgpad-done:hover { background: #2a95ff; }
+  .orgpad-share .orgpad-done:active { transform: scale(.96); }
+  .orgpad-share .orgpad-done:disabled { opacity: .5; cursor: default; }
+  .orgpad-share .orgpad-mini {
+    -webkit-appearance: none; appearance: none;
+    width: 34px; height: 34px; border-radius: 10px;
+    border: 1px solid var(--panel-stroke); background: var(--panel); color: var(--text);
+    cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    -webkit-backdrop-filter: blur(20px) saturate(1.7); backdrop-filter: blur(20px) saturate(1.7);
+    transition: background .12s ease, transform .06s ease;
+  }
+  .orgpad-share .orgpad-mini:hover { background: rgba(127,127,127,0.16); }
+  .orgpad-share .orgpad-mini:active { transform: scale(.94); }
+  .orgpad-share .orgpad-mini.on { background: var(--accent); color: #fff; border-color: transparent; }
+  .orgpad-share .orgpad-mini svg { width: 18px; height: 18px; display: block; }
+  /* Collapse tldraw's style panel when toggled off. */
+  #tldraw.orgpad-hide-style .tlui-style-panel__wrapper { display: none !important; }
 
   /* ---- Overlay screens (pairing / waiting / done / load error) ---- */
   .overlay {
@@ -151,15 +152,9 @@
 <body>
   <div id="tldraw"></div>
 
-  <!-- OrgPad actions (shown only while drawing) -->
-  <div id="orgbar" class="glass" hidden>
-    <span class="dot"></span>
-    <span class="brand">OrgPad</span>
-    <span id="status">ready</span>
-    <span id="build">tldraw</span>
-    <button id="btnDone" class="primary">Done</button>
-    <button id="btnCancel" class="ghost">Cancel</button>
-  </div>
+  <!-- OrgPad's Done/Cancel + style toggle are injected into tldraw's own
+       top-right chrome (SharePanel) from the module below, so they read as
+       part of the app rather than a separate floating bar. -->
 
   <div id="toast" class="glass"></div>
 
@@ -367,16 +362,50 @@ async function bakeBackground(blob, color) {
   return await new Promise(function (res) { c.toBlob(res, "image/png"); });
 }
 
+// Toggle tldraw's style panel (color/size/dash) on and off.
+function toggleStylePanel() {
+  var c = document.getElementById("tldraw");
+  var hidden = c.classList.toggle("orgpad-hide-style");
+  var btn = document.getElementById("btnStyle");
+  if (btn) btn.classList.toggle("on", !hidden);
+}
+var SLIDERS_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h10M18 18h2"/><circle cx="16" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="18" r="2" fill="currentColor" stroke="none"/></svg>';
+
+// OrgPad's own controls, injected into tldraw's top-right SharePanel zone so
+// they read as native chrome. Buttons keep their ids (btnDone/btnCancel) so the
+// e2e test and any external wiring still find them.
+function OrgPadShare() {
+  var h = React.createElement;
+  return h("div", { className: "orgpad-share" },
+    h("button", { id: "btnStyle", className: "orgpad-mini on", title: "Show/hide the style panel",
+                  "aria-label": "Toggle style panel", onClick: toggleStylePanel,
+                  dangerouslySetInnerHTML: { __html: SLIDERS_SVG } }),
+    h("button", { id: "btnCancel", className: "orgpad-mini", title: "Cancel", "aria-label": "Cancel",
+                  onClick: function () { cancel(); } }, "✕"),
+    h("button", { id: "btnDone", className: "orgpad-done", onClick: function () { done(); } }, "Done")
+  );
+}
+
 // Mount tldraw. Drop in a tldraw license key (window.ORGPAD_TLDRAW_LICENSE, or a
 // `tldraw_license` field on the injected config) to remove the watermark.
+// Hide the chrome a single-figure tool doesn't need (pages, minimap, debug).
 var LICENSE = (window.ORGPAD_CONFIG && window.ORGPAD_CONFIG.tldraw_license) || window.ORGPAD_TLDRAW_LICENSE || undefined;
+var TL_COMPONENTS = {
+  SharePanel: OrgPadShare,
+  PageMenu: null,
+  Minimap: null,
+  DebugMenu: null,
+  DebugPanel: null
+};
 createRoot(document.getElementById("tldraw")).render(
-  React.createElement(Tldraw, { onMount: onEditorMount, inferDarkMode: false, licenseKey: LICENSE })
+  React.createElement(Tldraw, { onMount: onEditorMount, inferDarkMode: false, licenseKey: LICENSE, components: TL_COMPONENTS })
 );
 
 // -------------------- UI helpers --------------------
 function el(id) { return document.getElementById(id); }
-function setStatus(t) { var s = el("status"); if (s) s.textContent = t; }
+// Status lives in the tab title now (no persistent on-canvas bar) — user-facing
+// transitions still surface as toasts.
+function setStatus(t) { document.title = t ? ("OrgPad — " + t) : "OrgPad — Draw"; }
 var toastTimer = null;
 function toast(msg) {
   var t = el("toast"); if (!t) return;
@@ -387,7 +416,6 @@ function toast(msg) {
 var SCREENS = ["screenLoading", "screenError", "screenPairing", "screenWaiting", "screenDone"];
 function showScreen(name) {
   SCREENS.forEach(function (id) { var e = el(id); if (e) e.hidden = (id !== name); });
-  el("orgbar").hidden = (name !== null);
 }
 
 // -------------------- receiver protocol --------------------
@@ -545,8 +573,7 @@ async function cancel() {
 }
 
 // -------------------- wiring + boot --------------------
-el("btnDone").addEventListener("click", done);
-el("btnCancel").addEventListener("click", cancel);
+// Done/Cancel are wired via onClick in OrgPadShare (tldraw's SharePanel).
 var pairBtn = el("btnPair"); if (pairBtn) pairBtn.addEventListener("click", submitPair);
 var pairInput = el("pairCode"); if (pairInput) pairInput.addEventListener("keydown", function (e) { if (e.key === "Enter") submitPair(); });
 var unpairBtn = el("btnUnpair"); if (unpairBtn) unpairBtn.addEventListener("click", doUnpair);

@@ -25,11 +25,10 @@
 ;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ;;; Commentary:
-;; Draw native-quality ink on an iPad (Swift Playgrounds + PencilKit) and have it
-;; land as a self-contained, re-editable PNG inside your org-mode document.
-;; Emacs runs a pure-Elisp HTTP server; the iPad app long-polls it.  A browser
-;; canvas is also available (see `org-pad-client').  See the README for the full
-;; protocol and setup.
+;; Draw on an iPad (or any device) in a browser canvas and have it land as a
+;; self-contained, re-editable PNG inside your org-mode document.  Emacs runs a
+;; pure-Elisp HTTP server; a browser tab at /canvas long-polls it and posts the
+;; figure back.  See the README for the full protocol and setup.
 
 ;;; Code:
 
@@ -110,8 +109,7 @@ Return a 32-bit unsigned integer.  Matches Python `zlib.crc32'."
   (logior (ash (aref bytes offset) 24) (ash (aref bytes (+ offset 1)) 16)
           (ash (aref bytes (+ offset 2)) 8) (aref bytes (+ offset 3))))
 
-(defconst org-pad--png-chunk-type "orPd" "Private PNG chunk type holding PKDrawing bytes.")
-(defconst org-pad--png-chunk-version #x01 "Version byte prefixed to the orPd chunk data.")
+(defconst org-pad--png-chunk-type "orPd" "Private PNG chunk type holding drawing bytes.")
 
 (defun org-pad--png-chunks (bytes)
   "Walk PNG unibyte string BYTES, returning a list of chunk descriptor plists:
@@ -548,7 +546,7 @@ REQ is the parsed request plist."
       (org-pad--respond proc 200 "application/json"
                         (encode-coding-string (json-serialize '(:ok t)) 'utf-8)))))
 
-;;;; Network & Bonjour ----------------------------------------------------
+;;;; Network ---------------------------------------------------------------
 
 (defun org-pad--ipv4-addresses ()
   "Non-loopback LAN IPv4 address strings, de-duplicated.
@@ -593,47 +591,11 @@ addresses as fallbacks."
   (let ((local (org-pad--local-hostname)))
     (append (and local (list local)) (org-pad--ipv4-addresses))))
 
-(defun org-pad--setup-urls (port)
-  "List of http://HOST:PORT/setup URLs; the IP-stable `.local' host first."
-  (mapcar (lambda (h) (format "http://%s:%d/setup" h port)) (org-pad--host-candidates)))
-
-(defvar org-pad--bonjour-process nil "The running `dns-sd -R' subprocess, or nil.")
-
-(defun org-pad--bonjour-start (port)
-  "Advertise `_orgpad._tcp' on PORT via mDNS so the iPad app auto-discovers it.
-Uses `dns-sd' on macOS and `avahi-publish'/`avahi-publish-service' on Linux.
-Returns the process, or nil (with a message) when no mDNS advertiser is
-available -- the setup URL still works for manual/browser use, and the `.local'
-address it prints resolves via mDNS regardless."
-  (org-pad--bonjour-stop)
-  (let* ((host (or (car (split-string (system-name) "\\." t)) "host"))
-         (name (format "OrgPad (%s)" host))
-         (portstr (number-to-string port))
-         (dns-sd (executable-find "dns-sd"))
-         (avahi (or (executable-find "avahi-publish")
-                    (executable-find "avahi-publish-service")))
-         (command (cond
-                   (dns-sd (list dns-sd "-R" name "_orgpad._tcp" "." portstr))
-                   (avahi  (list avahi "-s" name "_orgpad._tcp" portstr)))))
-    (if (not command)
-        (progn
-          (message "org-pad: no mDNS advertiser (install dns-sd on macOS or \
-avahi-utils on Linux); the printed setup URL still works")
-          nil)
-      (setq org-pad--bonjour-process
-            (make-process :name "org-pad-bonjour" :buffer " *org-pad-bonjour*" :noquery t
-                          :command command)))))
-
-(defun org-pad--bonjour-stop ()
-  "Kill the Bonjour advertisement subprocess if running."
-  (when (process-live-p org-pad--bonjour-process) (delete-process org-pad--bonjour-process))
-  (setq org-pad--bonjour-process nil))
-
-;;;; Setup page & assets --------------------------------------------------
+;;;; Package assets -------------------------------------------------------
 
 (defvar org-pad--package-dir
   (file-name-directory (or load-file-name buffer-file-name default-directory))
-  "Directory the package (and OrgPad.swiftpm.zip) lives in.")
+  "Directory the package (and the web canvas) lives in.")
 
 (defun org-pad--read-file-unibyte (path)
   "Return the raw bytes of PATH as a unibyte string (no decoding)."
@@ -641,102 +603,21 @@ avahi-utils on Linux); the printed setup URL still works")
                     (let ((coding-system-for-read 'binary)) (insert-file-contents-literally path))
                     (buffer-string)))
 
-(defcustom org-pad-app-download-url
-  "https://github.com/larrasket/org-pad.el/raw/HEAD/OrgPad.swiftpm.zip"
-  "URL the iPad app (OrgPad.swiftpm.zip) is downloaded from when unbundled.
-A package installed from an ELPA (e.g. MELPA) ships
-only the Elisp and the web canvas, not the Swift app, so the /setup page and
-/app endpoint fall back to this URL.  When the OrgPad.swiftpm sources (or a
-prebuilt zip) ARE present next to this file, the local copy is served instead."
-  :type 'string :group 'org-pad)
-
-(defun org-pad--local-app-zip ()
-  "Return a readable local OrgPad.swiftpm.zip path, or nil when none is bundled.
-Rebuilds the zip from bundled OrgPad.swiftpm sources when present, otherwise
-returns an existing prebuilt zip if one sits next to this package."
-  (or (org-pad--ensure-app-zip)
-      (let ((zip (expand-file-name "OrgPad.swiftpm.zip" org-pad--package-dir)))
-        (and (file-readable-p zip) zip))))
-
-(defun org-pad--setup-html (app-url)
-  "Return the /setup install-page HTML.
-APP-URL is the href of the app download button (a local /app URL when the app
-is bundled, else `org-pad-app-download-url')."
-  (concat
-   "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-   "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
-   "<title>OrgPad Setup</title>"
-   "<style>body{font-family:-apple-system,system-ui,sans-serif;max-width:34rem;"
-   "margin:2rem auto;padding:0 1rem;line-height:1.5}"
-   "a.btn{display:inline-block;background:#0a84ff;color:#fff;padding:.75rem 1.25rem;"
-   "border-radius:.5rem;text-decoration:none;font-weight:600}ol{padding-left:1.25rem}"
-   "</style></head><body><h1>OrgPad</h1><p>Draw into org-mode from your iPad.</p><ol>"
-   "<li>Install <strong>Swift Playgrounds</strong> from the App Store.</li>"
-   "<li>Download the app below and open it in Playgrounds (Files unzips on tap).</li>"
-   "<li>Tap <strong>Run</strong>, then enter the 6-digit code Emacs shows.</li></ol>"
-   (format "<p><a class=\"btn\" href=\"%s\">Download OrgPad.swiftpm.zip</a></p>" app-url)
-   "</body></html>"))
-
-(defun org-pad--handle-setup (req)
-  "GET /setup: serve the install page.
-REQ is the parsed request plist.
-The app button points at the local /app endpoint when the app is bundled, else
-at `org-pad-app-download-url'."
-  (let* ((host (or (org-pad--header req "host") (format "127.0.0.1:%d" org-pad-port)))
-         (app-url (if (org-pad--local-app-zip)
-                      (format "http://%s/app" host)
-                    org-pad-app-download-url)))
-    (org-pad--respond (plist-get req :proc) 200 "text/html; charset=utf-8"
-                      (encode-coding-string (org-pad--setup-html app-url) 'utf-8))))
-
-(defun org-pad--ensure-app-zip ()
-  "Rebuild OrgPad.swiftpm.zip from the OrgPad.swiftpm/ sources when they are present.
-No-op when the source directory is absent (an installed package ships a
-prebuilt zip) or when the `zip' tool is unavailable.  This keeps /app from ever
-serving a stale app after a Swift source edit -- the failure mode where a fixed
-source never reaches the iPad because the built artifact was not regenerated.
-Return the zip path when a rebuild happened, else nil."
-  (let ((src (expand-file-name "OrgPad.swiftpm" org-pad--package-dir))
-        (zip (expand-file-name "OrgPad.swiftpm.zip" org-pad--package-dir)))
-    (when (and (file-directory-p src) (executable-find "zip"))
-      (when (file-exists-p zip) (delete-file zip))
-      (let ((default-directory org-pad--package-dir))
-        ;; -r recurse, -X drop extra attrs, -q quiet; exclude the SourceKit
-        ;; index dir so only real sources land in the bundle.
-        (call-process "zip" nil nil nil "-r" "-X" "-q"
-                      "OrgPad.swiftpm.zip" "OrgPad.swiftpm" "-x" "*/.build/*"))
-      (and (file-readable-p zip) zip))))
-
-(defun org-pad--handle-app (req)
-  "GET /app: serve the bundled OrgPad.swiftpm.zip, or redirect to the download URL.
-REQ is the parsed request plist.
-When no app is bundled (an ELPA install ships only Elisp + web canvas), redirect
-to `org-pad-app-download-url' so the iPad can still fetch the app."
-  (let ((proc (plist-get req :proc))
-        (zip (org-pad--local-app-zip)))
-    (if zip
-        (org-pad--respond proc 200 "application/zip" (org-pad--read-file-unibyte zip)
-                          '(("Content-Disposition" . "attachment; filename=\"OrgPad.swiftpm.zip\"")))
-      (org-pad--respond proc 302 nil nil
-                        (list (cons "Location" org-pad-app-download-url))))))
-
 ;;;; Commands --------------------------------------------------------------
 
 ;;;###autoload
 (defun org-pad-server-start ()
-  "Start the org-pad HTTP server and Bonjour advertisement."
+  "Start the org-pad HTTP server."
   (interactive)
   (unless (process-live-p org-pad--server-process)
     (org-pad--register-routes)
     (org-pad--server-start org-pad-port)
-    (org-pad--bonjour-start org-pad-port)
     (message "org-pad: server on port %d" org-pad-port)))
 
 ;;;###autoload
 (defun org-pad-server-stop ()
-  "Stop the org-pad HTTP server and Bonjour advertisement."
+  "Stop the org-pad HTTP server."
   (interactive)
-  (org-pad--bonjour-stop)
   (org-pad--server-stop)
   (message "org-pad: server stopped"))
 
@@ -757,35 +638,28 @@ re-editable — spec error row) or not on a figure at all."
 
 ;;;###autoload
 (defun org-pad-setup ()
-  "Start the server and show install instructions, setup URLs, and a pairing code."
+  "Start the server and show the receiver URL and a pairing code."
   (interactive)
   (org-pad-server-start)
-  (org-pad--ensure-app-zip)   ; serve a zip that matches the current sources
   (let ((code (org-pad-pairing-start)))
-    ;; Also copy the code to the system clipboard: Swift Playgrounds has a known
-    ;; bug where a connected external keyboard blocks typing into text fields
-    ;; (paste still works), so with Universal Clipboard the user can paste it.
+    ;; Copy the code so it can be pasted (e.g. via Universal Clipboard) into the
+    ;; browser's pairing field.
     (kill-new code)
     (with-current-buffer (get-buffer-create "*org-pad setup*")
       (let ((inhibit-read-only t))
         (erase-buffer)
         (insert "OrgPad setup\n\n"
-                "1. Install Swift Playgrounds (App Store) on the iPad.\n"
-                "2. Open one of these URLs in iPad Safari and download the app.\n"
-                "   The first (.local) address is best — it keeps working even if\n"
-                "   your Mac's IP changes, so there's no IP to track:\n\n")
-        (dolist (url (org-pad--setup-urls org-pad-port))
-          (insert "   " url "\n"))
-        (insert (format "\n3. Tap Run in Playgrounds, then enter this code:\n\n      %s\n\n" code)
-                "   (copied to your clipboard — with Universal Clipboard you can paste it\n"
-                "    on the iPad; if an external keyboard blocks typing in Playgrounds,\n"
-                "    detach it and the on-screen keyboard works)\n"
-                "   (code expires after 5 wrong attempts; run M-x org-pad-setup again to reset)\n")
-        (insert "\nPrefer a browser (no iPad app needed)? Open one of these on any device,\n"
-                "enter the same code to pair, and leave the tab open — it receives every\n"
-                "M-x org-pad-draw (set `org-pad-client' to web):\n\n")
+                "Open one of these URLs in a browser on your iPad (or any device).\n"
+                "The first (.local) address is best — it keeps working even if your\n"
+                "Mac's IP changes, so there's no IP to track:\n\n")
         (dolist (url (org-pad--web-receiver-urls))
-          (insert "   " url "\n")))
+          (insert "   " url "\n"))
+        (insert (format "\nEnter this pairing code on the page:\n\n      %s\n\n" code)
+                "   (copied to your clipboard — with Universal Clipboard you can\n"
+                "    paste it on the iPad)\n"
+                "   (code expires after 5 wrong attempts; run M-x org-pad-setup again to reset)\n"
+                "\nLeave the tab open — it pairs once, then receives every"
+                " M-x org-pad-draw.\n"))
       (special-mode)
       (display-buffer (current-buffer)))
     code))
@@ -797,25 +671,17 @@ re-editable — spec error row) or not on a figure at all."
 ;;;; 1. Chunk FORMAT byte
 ;;;; ---------------------------------------------------------------------------
 
-;; Named formats.  #x01 keeps the value the v1 `org-pad--png-chunk-version'
-;; constant already had, so wire bytes for PKDrawing figures are identical.
+;; Named orPd chunk FORMAT bytes.  0x02 (web) is what this package produces now;
+;; 0x01 (legacy Apple PKDrawing, from the retired native app) is still recognised
+;; on read so any old figures degrade gracefully rather than erroring.
 (defconst org-pad-format-pkdrawing #x01
-  "Chunk FORMAT byte identifying Apple PKDrawing stroke bytes (v1, unchanged).")
+  "Chunk FORMAT byte identifying legacy Apple PKDrawing stroke bytes (read-only).")
 (defconst org-pad-format-web #x02
   "Chunk FORMAT byte identifying web-canvas JSON stroke data (UTF-8).")
 
 (defun org-pad-format-valid-p (format)
   "Return non-nil if FORMAT is a known orPd chunk format byte."
   (memq format (list org-pad-format-pkdrawing org-pad-format-web)))
-
-(defun org-pad-format->client (format)
-  "Map a chunk FORMAT byte to the client symbol that can re-edit it.
-0x01 -> `native', 0x02 -> `web'.  Unknown formats default to `native'."
-  (if (eql format org-pad-format-web) 'web 'native))
-
-(defun org-pad-client->format (client)
-  "Map a CLIENT symbol (`native'|`web') to the chunk FORMAT byte it produces."
-  (if (eq client 'web) org-pad-format-web org-pad-format-pkdrawing))
 
 ;; --- Redefinition of org-pad--png-embed: add an optional FORMAT arg. ---
 ;; Back-compat: called with two args it behaves EXACTLY like v1 (format #x01).
@@ -930,45 +796,21 @@ string passes through verbatim.  Always a non-empty string so the field is stabl
      (t "transparent"))))
 
 ;;;; ---------------------------------------------------------------------------
-;;;; 3. Client selection
+;;;; 3. Web-open behaviour
 ;;;; ---------------------------------------------------------------------------
-
-(defcustom org-pad-client 'native
-  "Which drawing client `org-pad-draw' targets for a NEW figure.
-`native' (default) pushes a session to the iPad app (long-poll flow);
-`web' opens the full-featured browser canvas at GET /canvas;
-`ask' prompts each time.
-An EDIT of an existing figure ignores this and routes by the figure's embedded
-chunk FORMAT: 0x02 -> web, 0x01 -> native."
-  :type '(choice (const :tag "Native iPad app" native)
-          (const :tag "Web canvas" web)
-          (const :tag "Ask each time" ask))
-  :group 'org-pad)
 
 (defcustom org-pad-web-open-function nil
   "How to open the per-session /canvas URL on the Emacs host machine.
 
 Default nil: `org-pad-draw' NEVER opens a browser on this machine.  A web
 drawing is simply queued, and a receiver tab you keep open on your iPad (or
-any browser at the /canvas URL) long-polls and picks it up — the same way the
-native app's Waiting screen works.
+any browser at the /canvas URL) long-polls and picks it up.
 
 Set this to a function (e.g. `browse-url') ONLY if you also want the drawing
 opened on the machine running Emacs.  It is called with the per-session URL."
   :type '(choice (const :tag "Never open on this machine (receiver picks it up)" nil)
                  (function :tag "Also open on this machine (e.g. browse-url)"))
   :group 'org-pad)
-
-(defun org-pad--resolve-client (&optional default)
-  "Resolve the NEW-figure client symbol, honouring `ask'.
-DEFAULT overrides `org-pad-client'.  Returns `native' or `web'."
-  (let ((c (or default org-pad-client)))
-    (pcase c
-      ('web 'web)
-      ('native 'native)
-      ('ask (if (y-or-n-p "Org-pad: use the web canvas (n = native iPad)?")
-                'web 'native))
-      (_ 'native))))
 
 ;;;; ---------------------------------------------------------------------------
 ;;;; Session struct extension: format + token, so JSON + routing have them.
@@ -1284,19 +1126,16 @@ Prefers the first non-loopback IPv4; falls back to 127.0.0.1."
 ;;;; ---------------------------------------------------------------------------
 
 (defun org-pad--register-routes ()
-  "Register all protocol + asset routes (idempotent), including v2 endpoints."
+  "Register all protocol + asset routes (idempotent)."
   (org-pad-route "POST" "/pair" #'org-pad--handle-pair)
   (org-pad-route "GET" "/session" #'org-pad--handle-session)
   (org-pad-route "POST" "/result" #'org-pad--handle-result)
   (org-pad-route "POST" "/cancel" #'org-pad--handle-cancel)
-  (org-pad-route "GET" "/app" #'org-pad--handle-app)
-  (org-pad-route "GET" "/setup" #'org-pad--handle-setup)
-  ;; v2:
   (org-pad-route "GET" "/canvas" #'org-pad--handle-canvas)
   (org-pad-route "GET" "/web" #'org-pad--handle-canvas))
 
 ;;;; ---------------------------------------------------------------------------
-;;;; org-pad-draw routing (native vs web; edit routes by chunk FORMAT).
+;;;; org-pad-draw routing (opens the web canvas; edit reads the chunk FORMAT).
 ;;;; ---------------------------------------------------------------------------
 
 (defun org-pad--web-receiver-urls ()
@@ -1329,9 +1168,9 @@ on this machine using TOKEN (or the first token on file when TOKEN is nil)."
 ;;;###autoload
 (defun org-pad-draw ()
   "Draw into the org buffer at point.  On an org-pad figure link, re-edit it.
-NEW figures route by `org-pad-client' (native/web/ask).  EDITs route by the
-figure's embedded chunk FORMAT: 0x02 -> web, 0x01 -> native, regardless of the
-default client."
+Both new figures and edits open the web canvas at GET /canvas: a receiver tab
+you keep open long-polls and picks up the request (or set
+`org-pad-web-open-function' to also open it on the machine running Emacs)."
   (interactive)
   (org-pad-server-start)
   (let ((dwim (org-pad-dwim-at-point)))
@@ -1339,9 +1178,8 @@ default client."
       (`(:edit ,file ,drawing)
        ;; DRAWING may be bare bytes (v1 dwim) or (FORMAT . BYTES) (v2 dwim).
        (let* ((pair (org-pad--file-drawing file))
-              (format (if pair (car pair) org-pad-format-pkdrawing))
+              (format (if pair (car pair) org-pad-format-web))
               (bytes (if pair (cdr pair) drawing))
-              (client (org-pad-format->client format))
               (id (org-pad-generate-id)))
          (org-pad--session-set-format id format)
          (org-pad-enqueue (org-pad-session--make
@@ -1349,34 +1187,20 @@ default client."
                            :name (file-name-nondirectory file)
                            :file file :drawing-bytes bytes))
          (org-pad--wake-waiters)
-         (if (eq client 'web)
-             (org-pad--open-web-session id nil)
-           (message "org-pad: editing %s — draw on the iPad"
-                    (file-name-nondirectory file)))))
+         (org-pad--open-web-session id nil)))
       (`(:new ,marker)
-       (let* ((client (org-pad--resolve-client))
-              (format (org-pad-client->format client))
-              (id (org-pad-generate-id)))
-         (org-pad--session-set-format id format)
+       (let ((id (org-pad-generate-id)))
+         (org-pad--session-set-format id org-pad-format-web)
          (org-pad-enqueue (org-pad-session--make
                            :id id :mode 'new
                            :name (funcall org-pad-file-name-function)
                            :marker marker))
          (org-pad--wake-waiters)
-         (if (eq client 'web)
-             (org-pad--open-web-session id nil)
-           (message "org-pad: draw on the iPad (open OrgPad in Swift Playgrounds if idle)")))))))
+         (org-pad--open-web-session id nil))))))
 
 ;;;; ---------------------------------------------------------------------------
 ;;;; 5. Transient menu
 ;;;; ---------------------------------------------------------------------------
-
-(defun org-pad-toggle-client ()
-  "Cycle `org-pad-client' native -> web -> ask -> native."
-  (interactive)
-  (setq org-pad-client
-        (pcase org-pad-client ('native 'web) ('web 'ask) (_ 'native)))
-  (message "org-pad: default client is now %s" org-pad-client))
 
 (defun org-pad-set-background (value)
   "Set `org-pad-figure-background' to VALUE interactively."
@@ -1409,8 +1233,6 @@ default client."
     ("s" "Setup + pair" org-pad-setup)
     ("S" "Toggle server" org-pad-server-toggle)]
    ["Config"
-    ("c" "Toggle default client" org-pad-toggle-client
-     :transient t)
     ("b" "Set figure background" org-pad-set-background
      :transient t)]])
 

@@ -126,7 +126,14 @@ let snapshotB64 = null;
   await page.click("#btnPair");
   // it should reach the drawing surface once /session returns 200
   await editorReady(page);
-  await page.waitForSelector("#orgbar:not([hidden])", { timeout: 30000 });
+  await page.waitForSelector("#btnDone", { timeout: 30000 });   // Done lives in tldraw's SharePanel now
+  // Wait until the drawing surface is actually active (all overlays hidden) —
+  // tldraw + #btnDone exist from boot behind the pairing/waiting overlays, so
+  // gate the draw on the overlays being gone, not just on the button existing.
+  await page.waitForFunction(() =>
+    ["screenPairing", "screenWaiting", "screenDone", "screenLoading", "screenError"]
+      .every((id) => { const e = document.getElementById(id); return !e || e.hidden; }),
+    null, { timeout: 30000 });
   t("POST /pair sent the exact {code} body", server.pairBody && server.pairBody.code === "123456");
   await drawStroke(page, [[360, 300], [430, 250], [520, 340], [600, 280]]);
   const shapes = await page.evaluate(() => window.__orgpad.editor.getCurrentPageShapeIds().size);

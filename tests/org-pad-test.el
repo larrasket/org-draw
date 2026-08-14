@@ -333,59 +333,19 @@
             (should (equal (gethash "session_id" (json-parse-string (nth 3 resp))) "s9"))))
       (delete-file org-pad-token-file))))
 
-;;;; Infra: interfaces + bonjour
+;;;; Infra: interfaces
 (ert-deftest org-pad-ipv4-addresses ()
   (let ((addrs (org-pad--ipv4-addresses)))
     (should (listp addrs))
     (dolist (a addrs)
       (should (string-match-p "\\`[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+\\'" a))
       (should-not (string-prefix-p "127." a)))))
-(ert-deftest org-pad-setup-urls ()
-  (dolist (u (org-pad--setup-urls 8777))
-    (should (string-suffix-p ":8777/setup" u))))
-(ert-deftest org-pad-bonjour-linux-safe ()
-  "Absence of any mDNS advertiser is non-fatal."
-  (cl-letf (((symbol-function 'executable-find) (lambda (&rest _) nil)))
-    (let ((org-pad--bonjour-process nil))
-      (should (null (org-pad--bonjour-start 8777))))))
-
-(ert-deftest org-pad-bonjour-avahi-on-linux ()
-  "On Linux (no dns-sd) with avahi-publish, build an avahi service command."
-  (cl-letf (((symbol-function 'executable-find)
-             (lambda (name &rest _)
-               (when (equal name "avahi-publish") "/usr/bin/avahi-publish")))
-            ((symbol-function 'make-process) (lambda (&rest args) (plist-get args :command))))
-    (let* ((org-pad--bonjour-process nil)
-           (cmd (org-pad--bonjour-start 8777)))
-      (should (equal (car cmd) "/usr/bin/avahi-publish"))
-      (should (member "-s" cmd))
-      (should (member "_orgpad._tcp" cmd))
-      (should (member "8777" cmd)))))
-
-;;;; Infra: /setup + /app
-(ert-deftest org-pad-setup-html-has-app-link ()
-  (let ((html (org-pad--setup-html "http://mymac.local:8777/app")))
-    (should (string-match-p "http://mymac.local:8777/app" html))
-    (should (string-match-p "Swift Playgrounds" html))))
-(ert-deftest org-pad-handle-app-redirects-when-missing ()
-  "With no bundled app, /app 302-redirects to `org-pad-app-download-url'."
-  (let ((org-pad--package-dir (make-temp-file "opkg" t))
-        (org-pad-app-download-url "https://example.test/OrgPad.swiftpm.zip")
-        (resp nil))
-    (unwind-protect
-        (cl-letf (((symbol-function 'org-pad--respond) (lambda (&rest a) (setq resp a))))
-          (org-pad--handle-app (list :proc nil))
-          (should (= (nth 1 resp) 302))
-          (should (equal (cdr (assoc "Location" (nth 4 resp)))
-                         "https://example.test/OrgPad.swiftpm.zip")))
-      (delete-directory org-pad--package-dir t))))
-
 ;;;; Commands
 (ert-deftest org-pad-register-routes ()
   (let ((org-pad--routes nil))
     (org-pad--register-routes)
     (dolist (key '(("POST" . "/pair") ("GET" . "/session") ("POST" . "/result")
-                   ("POST" . "/cancel") ("GET" . "/app") ("GET" . "/setup")))
+                   ("POST" . "/cancel") ("GET" . "/canvas") ("GET" . "/web")))
       (should (cdr (assoc key org-pad--routes))))))
 (ert-deftest org-pad-draw-enqueues ()
   (let* ((dir (make-temp-file "opd" t)) (org (expand-file-name "n.org" dir)))
@@ -404,28 +364,6 @@
                   (should (eq (org-pad-session-mode (org-pad-queue-head)) 'new)))
               (kill-buffer buf))))
       (delete-directory dir t))))
-
-;;;; Infra: app-zip freshness
-(ert-deftest org-pad-ensure-app-zip-rebuilds ()
-  "org-pad--ensure-app-zip builds a zip from OrgPad.swiftpm/ sources when present."
-  (skip-unless (executable-find "zip"))
-  (let* ((dir (make-temp-file "org-pad-zip" t))
-         (org-pad--package-dir (file-name-as-directory dir))
-         (src (expand-file-name "OrgPad.swiftpm/Sources" dir)))
-    (unwind-protect
-        (progn
-          (make-directory src t)
-          (with-temp-file (expand-file-name "OrgPad.swiftpm/Package.swift" dir)
-            (insert "// tools\n"))
-          (with-temp-file (expand-file-name "Marker.swift" src) (insert "let x = 1\n"))
-          (let ((zip (org-pad--ensure-app-zip)))
-            (should zip)
-            (should (file-readable-p zip))
-            ;; the rebuilt archive contains the real sources
-            (should (zerop (call-process "unzip" nil nil nil "-l" zip
-                                         "OrgPad.swiftpm/Sources/Marker.swift")))))
-      (delete-directory dir t))))
-
 
 ;;;; ======== v2 tests ========
 (defvar orgpad-v2-test-dir
@@ -531,11 +469,6 @@ Compares against the independently-generated legacy-0x01.png fixture."
         (should (= stored (org-pad--crc32 (concat (plist-get c :type) data))))))))
 
 (ert-deftest orgpad-v2-format-helpers ()
-  (should (eq (org-pad-format->client #x01) 'native))
-  (should (eq (org-pad-format->client #x02) 'web))
-  (should (eq (org-pad-format->client #x99) 'native))   ; unknown -> native
-  (should (eql (org-pad-client->format 'native) #x01))
-  (should (eql (org-pad-client->format 'web) #x02))
   (should (org-pad-format-valid-p #x01))
   (should (org-pad-format-valid-p #x02))
   (should-not (org-pad-format-valid-p #x03)))
@@ -625,69 +558,38 @@ Binds `opened' (URL passed to the web opener) and `msgs' (messages)."
                 (lambda (fmt &rest a) (push (apply #'format fmt a) msgs) nil)))
        ,@body)))
 
-(ert-deftest orgpad-v2-draw-new-native ()
-  "New figure with client=native enqueues a 0x01 session, no web open."
-  (org-pad--queue-reset)
-  (clrhash org-pad--session-format)
-  (let ((org-pad-client 'native))
-    (orgpad-v2-test--with-stubbed-draw
-     (cl-letf (((symbol-function 'org-pad-dwim-at-point)
-                (lambda () (list :new (copy-marker (point-min))))))
-       (org-pad-draw)
-       (should (null opened))
-       (let ((head (org-pad-queue-head)))
-         (should (eq (org-pad-session-mode head) 'new))
-         (should (eql (org-pad--session-get-format (org-pad-session-id head))
-                      org-pad-format-pkdrawing)))))))
-
 (ert-deftest orgpad-v2-draw-new-web ()
-  "New figure with client=web enqueues a 0x02 session and opens the canvas."
+  "A new figure enqueues a 0x02 session and opens the web canvas."
   (org-pad--queue-reset)
   (clrhash org-pad--session-format)
-  (let ((org-pad-client 'web))
-    (orgpad-v2-test--with-stubbed-draw
-     (cl-letf (((symbol-function 'org-pad-dwim-at-point)
-                (lambda () (list :new (copy-marker (point-min))))))
-       (org-pad-draw)
-       (let ((head (org-pad-queue-head)))
-         (should (equal opened (org-pad-session-id head)))
-         (should (eql (org-pad--session-get-format (org-pad-session-id head))
-                      org-pad-format-web)))))))
+  (orgpad-v2-test--with-stubbed-draw
+   (cl-letf (((symbol-function 'org-pad-dwim-at-point)
+              (lambda () (list :new (copy-marker (point-min))))))
+     (org-pad-draw)
+     (let ((head (org-pad-queue-head)))
+       (should (eq (org-pad-session-mode head) 'new))
+       (should (equal opened (org-pad-session-id head)))
+       (should (eql (org-pad--session-get-format (org-pad-session-id head))
+                    org-pad-format-web))))))
 
-(ert-deftest orgpad-v2-draw-edit-routes-by-format ()
-  "Edit routes to the client matching the FIGURE's chunk format, ignoring default."
+(ert-deftest orgpad-v2-draw-edit-opens-web ()
+  "Editing a web figure opens the web canvas; the session records its format."
   (let* ((dir (make-temp-file "opv2edit" t))
-         (pk-file (expand-file-name "pk.png" dir))
          (web-file (expand-file-name "web.png" dir)))
     (unwind-protect
         (progn
-          (org-pad--write-png pk-file (orgpad-v2-test--png)
-                              (orgpad-v2-test--drawing) org-pad-format-pkdrawing)
           (org-pad--write-png web-file (orgpad-v2-test--png)
                               "webjson" org-pad-format-web)
-          ;; Even with default client=web, a PK figure edits NATIVE (no web open).
           (org-pad--queue-reset) (clrhash org-pad--session-format)
-          (let ((org-pad-client 'web))
-            (orgpad-v2-test--with-stubbed-draw
-             (cl-letf (((symbol-function 'org-pad-dwim-at-point)
-                        (lambda () (list :edit pk-file (orgpad-v2-test--drawing)))))
-               (org-pad-draw)
-               (should (null opened))    ; native, not web
-               (should (eql (org-pad--session-get-format
-                             (org-pad-session-id (org-pad-queue-head)))
-                            org-pad-format-pkdrawing)))))
-          ;; Even with default client=native, a WEB figure edits WEB (opens canvas).
-          (org-pad--queue-reset) (clrhash org-pad--session-format)
-          (let ((org-pad-client 'native))
-            (orgpad-v2-test--with-stubbed-draw
-             (cl-letf (((symbol-function 'org-pad-dwim-at-point)
-                        (lambda () (list :edit web-file
-                                         (encode-coding-string "webjson" 'utf-8)))))
-               (org-pad-draw)
-               (should (equal opened (org-pad-session-id (org-pad-queue-head))))
-               (should (eql (org-pad--session-get-format
-                             (org-pad-session-id (org-pad-queue-head)))
-                            org-pad-format-web))))))
+          (orgpad-v2-test--with-stubbed-draw
+           (cl-letf (((symbol-function 'org-pad-dwim-at-point)
+                      (lambda () (list :edit web-file
+                                       (encode-coding-string "webjson" 'utf-8)))))
+             (org-pad-draw)
+             (should (equal opened (org-pad-session-id (org-pad-queue-head))))
+             (should (eql (org-pad--session-get-format
+                           (org-pad-session-id (org-pad-queue-head)))
+                          org-pad-format-web)))))
       (delete-directory dir t))))
 
 ;;;; ---------------------------------------------------------------------------
@@ -921,16 +823,8 @@ session is injected only with a valid token AND a queued session."
 
 (ert-deftest orgpad-v2-menu-defined ()
   (should (commandp 'org-pad-menu))
-  (should (commandp 'org-pad-toggle-client))
   (should (commandp 'org-pad-set-background))
   (should (commandp 'org-pad-server-toggle)))
-
-(ert-deftest orgpad-v2-toggle-client-cycles ()
-  (let ((org-pad-client 'native))
-    (cl-letf (((symbol-function 'message) #'ignore))
-      (org-pad-toggle-client) (should (eq org-pad-client 'web))
-      (org-pad-toggle-client) (should (eq org-pad-client 'ask))
-      (org-pad-toggle-client) (should (eq org-pad-client 'native)))))
 
 
 (provide 'org-pad-test)

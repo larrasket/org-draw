@@ -1,7 +1,7 @@
 EMACS ?= emacs
 EL    := org-pad.el
 
-.PHONY: test compile lint zip fake-ipad clean swift app verify-web web typecheck
+.PHONY: test compile web clean
 
 test:
 	$(EMACS) -Q --batch -L . -l tests/org-pad-test.el \
@@ -13,26 +13,11 @@ compile:
 		--eval '(setq byte-compile-docstring-max-column 100)' \
 		-f batch-byte-compile $(EL)
 
-zip:
-	rm -f OrgPad.swiftpm.zip
-	zip -r -X OrgPad.swiftpm.zip OrgPad.swiftpm -x '*/.build/*'
-
-swift:
-	swift tests/verify_models.swift
-	swift tests/verify_export.swift
-	@tmp=$$(mktemp -d); cp OrgPad.swiftpm/Sources/SmartInk.swift $$tmp/SmartInk.swift; \
-	 cp tests/verify_smartink.swift $$tmp/main.swift; \
-	 ( cd $$tmp && swiftc SmartInk.swift main.swift -o sv && ./sv ); rm -rf $$tmp
-
-typecheck:
-	xcrun -sdk iphoneos swiftc -typecheck -target arm64-apple-ios16.0 \
-		OrgPad.swiftpm/Sources/*.swift
-
+# Web canvas end-to-end test (real browser). Needs Playwright:
+#   cd web && npm i -D playwright && npx playwright install chromium
+# Skips gracefully if Playwright isn't installed.
 web:
-	cd web && node e2e.mjs   # needs Playwright: npm i -D playwright && npx playwright install chromium (skips if absent)
-
-fake-ipad:
-	./fake-ipad.sh $(ARGS)
+	cd web && node e2e.mjs
 
 clean:
 	rm -f *.elc tests/*.elc
