@@ -3,20 +3,14 @@ Seamless drawing into org-mode.
 
 [[https://img.shields.io/badge/license-GPLv3-blue.svg]] [[https://img.shields.io/badge/Emacs-28.1%2B-7F5AB6.svg]] [[https://img.shields.io/badge/canvas-tldraw-1e88e5.svg]] [[https://img.shields.io/badge/no%20app-just%20a%20browser-2ea44f.svg]]
 
+[[file:figures/fig-20260816-065931.png]]
+
 org-draw lets you draw inside Org-mode using any device with a web browser and have the
 result land in org-mode buffer as an inline, re-editable, portable figure.
 
 
 
-[[file:figures/fig-20260816-065931.png]]
-
-** Demo
-:PROPERTIES:
-:CUSTOM_ID: demo
-:END:
-
 [[https://www.youtube.com/watch?v=04zbf-tosNQ][https://img.youtube.com/vi/04zbf-tosNQ/0.jpg]]
-
 
 ** Get started
 :PROPERTIES:
@@ -24,7 +18,6 @@ result land in org-mode buffer as an inline, re-editable, portable figure.
 :END:
 
 *** TODO Add to MELPA
-
 *** straight.el + use-package
 #+begin_src emacs-lisp
 (use-package org-draw
@@ -55,7 +48,7 @@ In =~/.doom.d/config.el=:
 #+end_src
 
 
-* Usage
+** Usage
 
 =M-x org-draw= copies the
 receiver URL to your clipboard. Open it on your machine or any device in your network.
@@ -98,8 +91,13 @@ message instead of a blank screen).
   running Emacs, in addition to the receiver tab picking it up. Leave =nil= to
   rely solely on the open receiver tab.
 
+
 ** License
 :PROPERTIES:
 :CUSTOM_ID: license
 :END:
 GPL-3.0-or-later. See [[file:LICENSE]].
+
+
+[[file:figures/fig-20260816-065931.png]]
+
