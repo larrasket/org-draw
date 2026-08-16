@@ -99,5 +99,4 @@ message instead of a blank screen).
 GPL-3.0-or-later. See [[file:LICENSE]].
 
 
-[[file:figures/fig-20260816-065931.png]]
-
+[[file:figures/fig-20260816-081110.png]]
