@@ -733,8 +733,8 @@ Binds `opened' (URL passed to the web opener) and `msgs' (messages)."
     (json-parse-string (substring rest 0 semi))))
 
 (ert-deftest orgdraw-v2-handle-canvas-auth ()
-  "The /canvas page is served unconditionally (receiver mode); a SPECIFIC
-session is injected only with a valid token AND a queued session."
+  "With pairing required, a session is injected only for a valid token; with
+pairing off (default), a queued session is injected without any token."
   (let* ((tokfile (make-temp-file "opv2tok")) (resp nil))
     (unwind-protect
         (let ((org-draw-token-file tokfile)
@@ -744,23 +744,27 @@ session is injected only with a valid token AND a queued session."
           (org-draw-enqueue (org-draw-session--make :id "s1" :mode 'new :name "f.png"))
           (cl-letf (((symbol-function 'org-draw--respond)
                      (lambda (&rest a) (setq resp a))))
-            ;; no token -> 200 receiver page, no session/token injected
-            (org-draw--handle-canvas (list :proc 'P :query "session=s1"))
-            (should (= (nth 1 resp) 200))
-            (let ((cfg (org-draw-test--canvas-config (nth 3 resp))))
-              (should (equal (gethash "session_id" cfg) ""))
-              (should (equal (gethash "token" cfg) "")))
-            ;; bad token -> still a receiver page, nothing injected
-            (org-draw--handle-canvas (list :proc 'P :query "session=s1&token=bad"))
-            (should (= (nth 1 resp) 200))
-            (should (equal (gethash "session_id" (org-draw-test--canvas-config (nth 3 resp))) ""))
-            ;; valid token + queued session -> per-session config injected
-            (org-draw--handle-canvas (list :proc 'P :query "session=s1&token=good"))
-            (should (= (nth 1 resp) 200))
-            (should (equal (nth 2 resp) "text/html; charset=utf-8"))
-            (let ((cfg (org-draw-test--canvas-config (nth 3 resp))))
-              (should (equal (gethash "session_id" cfg) "s1"))
-              (should (equal (gethash "token" cfg) "good")))))
+            (let ((org-draw-require-pairing t))
+              ;; no token -> receiver page, nothing injected
+              (org-draw--handle-canvas (list :proc 'P :query "session=s1"))
+              (should (= (nth 1 resp) 200))
+              (let ((cfg (org-draw-test--canvas-config (nth 3 resp))))
+                (should (equal (gethash "session_id" cfg) ""))
+                (should (equal (gethash "token" cfg) "")))
+              ;; bad token -> nothing injected
+              (org-draw--handle-canvas (list :proc 'P :query "session=s1&token=bad"))
+              (should (equal (gethash "session_id" (org-draw-test--canvas-config (nth 3 resp))) ""))
+              ;; valid token -> per-session config injected
+              (org-draw--handle-canvas (list :proc 'P :query "session=s1&token=good"))
+              (should (equal (nth 2 resp) "text/html; charset=utf-8"))
+              (let ((cfg (org-draw-test--canvas-config (nth 3 resp))))
+                (should (equal (gethash "session_id" cfg) "s1"))
+                (should (equal (gethash "token" cfg) "good"))))
+            ;; pairing off (default): queued session injected with no token
+            (let ((org-draw-require-pairing nil))
+              (org-draw--handle-canvas (list :proc 'P :query "session=s1"))
+              (should (= (nth 1 resp) 200))
+              (should (equal (gethash "session_id" (org-draw-test--canvas-config (nth 3 resp))) "s1")))))
       (ignore-errors (delete-file tokfile)))))
 
 (ert-deftest orgdraw-v2-handle-canvas-edit-injects-existing-json ()
@@ -795,8 +799,19 @@ session is injected only with a valid token AND a queued session."
   (let ((url (org-draw--canvas-url "192.168.1.5:8777" "sid abc" "tok/xyz")))
     (should (string-prefix-p "http://192.168.1.5:8777/canvas?session=" url))
     (should (string-search "token=" url))
-    ;; params are URL-encoded
-    (should (string-search "sid%20abc" url))))
+    (should (string-search "sid%20abc" url)))
+  ;; empty/nil token -> no &token= at all
+  (should-not (string-search "token=" (org-draw--canvas-url "h:8777" "s1" "")))
+  (should-not (string-search "token=" (org-draw--canvas-url "h:8777" "s1" nil))))
+
+(ert-deftest orgdraw-v2-url-opener ()
+  "`org-draw--url-opener' is off by default, browse-url when opted in, or a custom fn."
+  (let ((org-draw-open-browser nil) (org-draw-web-open-function nil))
+    (should (null (org-draw--url-opener))))
+  (let ((org-draw-open-browser t) (org-draw-web-open-function nil))
+    (should (eq (org-draw--url-opener) #'browse-url)))
+  (let ((org-draw-open-browser t) (org-draw-web-open-function #'ignore))
+    (should (eq (org-draw--url-opener) #'ignore))))
 
 (ert-deftest orgdraw-v2-routes-registered ()
   "org-draw--register-routes wires /canvas and /web to the canvas handler."

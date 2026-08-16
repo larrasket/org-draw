@@ -64,6 +64,12 @@ Turn this on if other people share your network and you don't want them able to
 reach the server."
   :type 'boolean :group 'org-draw)
 
+(defcustom org-draw-copy-url t
+  "When non-nil, copy the receiver URL to the kill-ring on `org-draw-setup' and
+on the first `org-draw'/`org-draw-edit' of a session.  Set to nil to never touch
+the kill-ring; the URL is still echoed and listed in the setup buffer."
+  :type 'boolean :group 'org-draw)
+
 (defcustom org-draw-directory "figures"
   "Directory for new figures, resolved relative to the visited org file."
   :type 'string :group 'org-draw)
@@ -650,13 +656,14 @@ re-editable) or not on a figure at all."
   "Non-nil once the receiver URL was copied to the clipboard this session.")
 
 (defun org-draw--announce-receiver-url (&optional force)
-  "Copy the primary receiver URL to the kill-ring and echo it.
+  "Echo the primary receiver URL, and copy it when `org-draw-copy-url' is set.
 Does nothing after the first call unless FORCE is non-nil.  Returns the URL."
   (let ((url (car (org-draw--web-receiver-urls))))
     (when (and url (or force (not org-draw--url-announced)))
-      (kill-new url)
       (setq org-draw--url-announced t)
-      (message "OrgDraw: open %s (copied to clipboard)" url))
+      (if org-draw-copy-url
+          (progn (kill-new url) (message "OrgDraw: open %s (copied to clipboard)" url))
+        (message "OrgDraw: open %s" url)))
     url))
 
 ;;;###autoload
@@ -808,18 +815,24 @@ string passes through verbatim.  Always a non-empty string so the field is stabl
 
 ;;;; Web-open behaviour
 
+(defcustom org-draw-open-browser nil
+  "When non-nil, `org-draw' and `org-draw-edit' open the canvas in a web browser
+on the machine running Emacs (via `browse-url'), so you can draw right there.
+Leave nil to just queue the drawing for a receiver tab you keep open elsewhere.
+For a custom opener, set `org-draw-web-open-function' instead."
+  :type 'boolean :group 'org-draw)
+
 (defcustom org-draw-web-open-function nil
-  "How to open the per-session /canvas URL on the Emacs host machine.
-
-Default nil: `org-draw' NEVER opens a browser on this machine.  A web
-drawing is simply queued, and a receiver tab you keep open on your iPad (or
-any browser at the /canvas URL) long-polls and picks it up.
-
-Set this to a function (e.g. `browse-url') ONLY if you also want the drawing
-opened on the machine running Emacs.  It is called with the per-session URL."
-  :type '(choice (const :tag "Never open on this machine (receiver picks it up)" nil)
-          (function :tag "Also open on this machine (e.g. browse-url)"))
+  "Custom function to open the per-session /canvas URL on the Emacs host.
+When set, it takes precedence over `org-draw-open-browser' and is called with the
+URL string (e.g. `browse-url', or a function that targets a specific browser)."
+  :type '(choice (const :tag "None" nil) (function :tag "Opener function"))
   :group 'org-draw)
+
+(defun org-draw--url-opener ()
+  "Return the function to open a URL on this host, or nil if auto-open is off."
+  (cond ((functionp org-draw-web-open-function) org-draw-web-open-function)
+        (org-draw-open-browser #'browse-url)))
 
 ;;;; Session struct extension
 ;;
@@ -1071,7 +1084,9 @@ page boots as a receiver."
          (query (plist-get req :query))
          (q-session (org-draw--query-param query "session"))
          (q-token (org-draw--query-param query "token"))
-         (authed (org-draw-token-valid-p q-token))
+         ;; With pairing off, a ?session= URL is served without a token so the
+         ;; host-open (auto-open) flow can go straight into the drawing.
+         (authed (or (not org-draw-require-pairing) (org-draw-token-valid-p q-token)))
          (session (and authed q-session (org-draw--queue-find q-session)))
          (session-id (if session q-session ""))
          (token (if authed q-token ""))
@@ -1101,12 +1116,12 @@ page boots as a receiver."
                          ("Pragma" . "no-cache")))))
 
 (defun org-draw--canvas-url (host session-id token)
-  "Build the http://HOST/canvas?session=..&token=.. URL string.
-SESSION-ID and TOKEN are URL-encoded into the query."
-  (format "http://%s/canvas?session=%s&token=%s"
-          host
-          (url-hexify-string (or session-id ""))
-          (url-hexify-string (or token ""))))
+  "Build the http://HOST/canvas?session=.. URL string.
+&token= is appended only when TOKEN is a non-empty string."
+  (concat (format "http://%s/canvas?session=%s" host (url-hexify-string (or session-id "")))
+          (if (and (stringp token) (not (string-empty-p token)))
+              (format "&token=%s" (url-hexify-string token))
+            "")))
 
 (defun org-draw--first-host ()
   "Return a \"IP:PORT\" reachable host for building client URLs.
@@ -1136,16 +1151,17 @@ the Mac's IP changing, so you never have to re-open a new address."
           (org-draw--host-candidates)))
 
 (defun org-draw--open-web-session (session-id &optional token)
-  "Announce that web SESSION-ID was queued for the receiver.
-By default this does NOT open a browser on the Emacs host; a receiver tab kept
-open on the iPad long-polls and picks the session up.  When
-`org-draw-web-open-function' is non-nil (opt-in), ALSO open the per-session URL
-on this machine using TOKEN (or the first token on file when TOKEN is nil)."
-  (when (and org-draw-web-open-function (functionp org-draw-web-open-function))
-    (let ((tok (or token (car (last (org-draw--load-tokens))))))
-      (when (and (stringp tok) (not (string-empty-p tok)))
-        (funcall org-draw-web-open-function
-                 (org-draw--canvas-url (org-draw--first-host) session-id tok)))))
+  "Queue web SESSION-ID for the receiver, and optionally open it on this host.
+By default nothing opens here; a receiver tab you keep open long-polls and picks
+the session up.  When `org-draw-open-browser' (or a custom
+`org-draw-web-open-function') is set, ALSO open the per-session URL on this
+machine.  TOKEN rides in the URL only when pairing is required."
+  (let ((opener (org-draw--url-opener)))
+    (when opener
+      (let ((tok (if org-draw-require-pairing
+                     (or token (car (last (org-draw--load-tokens))))
+                   "")))
+        (funcall opener (org-draw--canvas-url (org-draw--first-host) session-id tok)))))
   (let ((receiver (car (org-draw--web-receiver-urls))))
     (if receiver
         (message "org-draw: queued (%s)" receiver)

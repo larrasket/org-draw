@@ -86,11 +86,38 @@ message instead of a blank screen).
   =white=, =dark=, or a CSS color string to bake that behind every figure.
 - =org-draw-web-canvas-file= path to the web canvas HTML served at =/canvas=
   (defaults to =web/canvas.html= shipped with the package).
-- =org-draw-web-open-function= (default =nil=) when non-nil (e.g. =browse-url=),
-  =org-draw= also opens the per-session =/canvas= URL on the machine
-  running Emacs, in addition to the receiver tab picking it up. Leave =nil= to
-  rely solely on the open receiver tab.
+- =org-draw-open-browser= (default =nil=) when non-nil, =org-draw= and
+  =org-draw-edit= open the canvas in a browser on the machine running Emacs (via
+  =browse-url=), so you can draw right there instead of on another device.
+- =org-draw-copy-url= (default =t=) copy the receiver URL to the kill-ring on
+  =org-draw-setup= and on the first =org-draw= of a session. Set to =nil= to
+  stop copying; the URL is still echoed and listed in the setup buffer.
+- =org-draw-web-open-function= (default =nil=) a custom opener for the per-session
+  =/canvas= URL; takes precedence over =org-draw-open-browser=. Set it to a
+  function (e.g. one that targets a specific browser); it is called with the URL.
 
+
+** Keybindings
+:PROPERTIES:
+:CUSTOM_ID: keybindings
+:END:
+
+No keys are bound by default. A suggested set for Org buffers:
+#+begin_src emacs-lisp
+(with-eval-after-load 'org
+  (define-key org-mode-map (kbd "C-c d d") #'org-draw)
+  (define-key org-mode-map (kbd "C-c d e") #'org-draw-edit)
+  (define-key org-mode-map (kbd "C-c d s") #'org-draw-setup))
+#+end_src
+
+Or with use-package:
+#+begin_src emacs-lisp
+(use-package org-draw
+  :bind (:map org-mode-map
+         ("C-c d d" . org-draw)
+         ("C-c d e" . org-draw-edit)
+         ("C-c d s" . org-draw-setup)))
+#+end_src
 
 ** License
 :PROPERTIES:
