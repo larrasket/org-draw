@@ -66,32 +66,11 @@
     border-radius: 16px;
   }
 
-  /* OrgDraw actions injected into tldraw's top-right SharePanel zone */
-  .orgdraw-share { display: flex; align-items: center; gap: 6px; pointer-events: all; }
-  .orgdraw-share .orgdraw-done {
-    -webkit-appearance: none; appearance: none;
-    height: 34px; padding: 0 15px; border-radius: 10px; border: none;
-    background: var(--accent); color: #fff; cursor: pointer;
-    font: 600 14px/1 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-    box-shadow: 0 2px 8px rgba(10,132,255,0.42);
-    transition: background .12s ease, transform .06s ease;
-  }
-  .orgdraw-share .orgdraw-done:hover { background: #2a95ff; }
-  .orgdraw-share .orgdraw-done:active { transform: scale(.96); }
-  .orgdraw-share .orgdraw-done:disabled { opacity: .5; cursor: default; }
-  .orgdraw-share .orgdraw-mini {
-    -webkit-appearance: none; appearance: none;
-    width: 34px; height: 34px; border-radius: 10px;
-    border: 1px solid var(--panel-stroke); background: var(--panel); color: var(--text);
-    cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
-    -webkit-backdrop-filter: blur(20px) saturate(1.7); backdrop-filter: blur(20px) saturate(1.7);
-    transition: background .12s ease, transform .06s ease;
-  }
-  .orgdraw-share .orgdraw-mini:hover { background: rgba(127,127,127,0.16); }
-  .orgdraw-share .orgdraw-mini:active { transform: scale(.94); }
-  .orgdraw-share .orgdraw-mini.on { background: var(--accent); color: #fff; border-color: transparent; }
-  .orgdraw-share .orgdraw-mini svg { width: 18px; height: 18px; display: block; }
-  /* Collapse tldraw's style panel when toggled off. */
+  /* OrgDraw's Done/Cancel/style buttons reuse tldraw's own tlui-button styling
+     so they match the native chrome; we only lay them out and size the icons. */
+  .orgdraw-share { display: flex; align-items: center; gap: 2px; pointer-events: all; padding-right: 2px; }
+  .orgdraw-share svg { width: 18px; height: 18px; display: block; }
+  .orgdraw-share .orgdraw-done { font-weight: 600; }
   #tldraw.orgdraw-hide-style .tlui-style-panel__wrapper { display: none !important; }
 
   /* Overlay screens (pairing / waiting / done / load error) */
@@ -361,10 +340,7 @@ async function bakeBackground(blob, color) {
 }
 
 function toggleStylePanel() {
-  var c = document.getElementById("tldraw");
-  var hidden = c.classList.toggle("orgdraw-hide-style");
-  var btn = document.getElementById("btnStyle");
-  if (btn) btn.classList.toggle("on", !hidden);
+  document.getElementById("tldraw").classList.toggle("orgdraw-hide-style");
 }
 var SLIDERS_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h10M18 18h2"/><circle cx="16" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="18" r="2" fill="currentColor" stroke="none"/></svg>';
 var CLOSE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -374,14 +350,16 @@ var CLOSE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stro
 // e2e test and any external wiring still find them.
 function OrgDrawShare() {
   var h = React.createElement;
+  var iconBtn = function (id, title, svg, onClick) {
+    return h("button", { id: id, className: "tlui-button tlui-button__icon", title: title,
+                         "aria-label": title, onClick: onClick,
+                         dangerouslySetInnerHTML: { __html: svg } });
+  };
   return h("div", { className: "orgdraw-share" },
-    h("button", { id: "btnStyle", className: "orgdraw-mini on", title: "Show/hide the style panel",
-                  "aria-label": "Toggle style panel", onClick: toggleStylePanel,
-                  dangerouslySetInnerHTML: { __html: SLIDERS_SVG } }),
-    h("button", { id: "btnCancel", className: "orgdraw-mini", title: "Cancel", "aria-label": "Cancel",
-                  onClick: function () { cancel(); },
-                  dangerouslySetInnerHTML: { __html: CLOSE_SVG } }),
-    h("button", { id: "btnDone", className: "orgdraw-done", onClick: function () { done(); } }, "Done")
+    iconBtn("btnStyle", "Show/hide the style panel", SLIDERS_SVG, toggleStylePanel),
+    iconBtn("btnCancel", "Cancel", CLOSE_SVG, function () { cancel(); }),
+    h("button", { id: "btnDone", className: "tlui-button tlui-button__primary orgdraw-done",
+                  onClick: function () { done(); } }, "Done")
   );
 }
 
