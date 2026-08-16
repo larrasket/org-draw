@@ -5,14 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#101114">
-<title>OrgPad — Draw</title>
+<title>OrgDraw</title>
 
-<!-- tldraw's stylesheet (served from its CDN). -->
 <link rel="stylesheet" href="https://esm.sh/tldraw@3.15.1/tldraw.css">
 
-<!-- No-build ES module import map: React + tldraw straight from the CDN.
-     This needs the device to have internet; on a locked-down/offline network
-     the loader below shows a clear message instead of a blank screen. -->
+<!-- No-build ES module import map (needs internet the first load; the loader below shows a clear message offline). -->
 <script type="importmap">
 {
   "imports": {
@@ -58,10 +55,8 @@
     font: 15px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
     -webkit-text-size-adjust: 100%;
   }
-  /* tldraw fills the screen. */
   #tldraw { position: fixed; inset: 0; }
 
-  /* ---- Glass panel base ---- */
   .glass {
     background: var(--panel);
     -webkit-backdrop-filter: blur(24px) saturate(1.7);
@@ -71,9 +66,9 @@
     border-radius: 16px;
   }
 
-  /* ---- OrgPad actions injected into tldraw's top-right (SharePanel) zone ---- */
-  .orgpad-share { display: flex; align-items: center; gap: 6px; pointer-events: all; }
-  .orgpad-share .orgpad-done {
+  /* OrgDraw actions injected into tldraw's top-right SharePanel zone */
+  .orgdraw-share { display: flex; align-items: center; gap: 6px; pointer-events: all; }
+  .orgdraw-share .orgdraw-done {
     -webkit-appearance: none; appearance: none;
     height: 34px; padding: 0 15px; border-radius: 10px; border: none;
     background: var(--accent); color: #fff; cursor: pointer;
@@ -81,10 +76,10 @@
     box-shadow: 0 2px 8px rgba(10,132,255,0.42);
     transition: background .12s ease, transform .06s ease;
   }
-  .orgpad-share .orgpad-done:hover { background: #2a95ff; }
-  .orgpad-share .orgpad-done:active { transform: scale(.96); }
-  .orgpad-share .orgpad-done:disabled { opacity: .5; cursor: default; }
-  .orgpad-share .orgpad-mini {
+  .orgdraw-share .orgdraw-done:hover { background: #2a95ff; }
+  .orgdraw-share .orgdraw-done:active { transform: scale(.96); }
+  .orgdraw-share .orgdraw-done:disabled { opacity: .5; cursor: default; }
+  .orgdraw-share .orgdraw-mini {
     -webkit-appearance: none; appearance: none;
     width: 34px; height: 34px; border-radius: 10px;
     border: 1px solid var(--panel-stroke); background: var(--panel); color: var(--text);
@@ -92,54 +87,58 @@
     -webkit-backdrop-filter: blur(20px) saturate(1.7); backdrop-filter: blur(20px) saturate(1.7);
     transition: background .12s ease, transform .06s ease;
   }
-  .orgpad-share .orgpad-mini:hover { background: rgba(127,127,127,0.16); }
-  .orgpad-share .orgpad-mini:active { transform: scale(.94); }
-  .orgpad-share .orgpad-mini.on { background: var(--accent); color: #fff; border-color: transparent; }
-  .orgpad-share .orgpad-mini svg { width: 18px; height: 18px; display: block; }
+  .orgdraw-share .orgdraw-mini:hover { background: rgba(127,127,127,0.16); }
+  .orgdraw-share .orgdraw-mini:active { transform: scale(.94); }
+  .orgdraw-share .orgdraw-mini.on { background: var(--accent); color: #fff; border-color: transparent; }
+  .orgdraw-share .orgdraw-mini svg { width: 18px; height: 18px; display: block; }
   /* Collapse tldraw's style panel when toggled off. */
-  #tldraw.orgpad-hide-style .tlui-style-panel__wrapper { display: none !important; }
+  #tldraw.orgdraw-hide-style .tlui-style-panel__wrapper { display: none !important; }
 
-  /* ---- Overlay screens (pairing / waiting / done / load error) ---- */
+  /* Overlay screens (pairing / waiting / done / load error) */
   .overlay {
     position: fixed; inset: 0; z-index: 1000;
     display: flex; align-items: center; justify-content: center; padding: 24px;
-    background: radial-gradient(120% 80% at 50% -10%, color-mix(in srgb, var(--bg) 82%, #000 4%), var(--bg) 70%);
+    background: var(--bg);
   }
   .overlay[hidden] { display: none; }
   .card {
-    width: min(380px, 100%); padding: 32px 28px; text-align: center;
-    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    width: min(340px, 100%); text-align: center;
+    display: flex; flex-direction: column; align-items: stretch; gap: 12px;
   }
-  .card h1 { margin: 0; font-size: 20px; font-weight: 700; color: var(--text); }
-  .card p.hint { margin: 0; font-size: 13px; color: var(--text-dim); line-height: 1.4; }
+  .card h1 { margin: 0 0 2px; font-size: 22px; font-weight: 600; color: var(--text); }
+  .card p.hint { margin: 0; font-size: 14px; color: var(--text-dim); line-height: 1.45; }
+  .card code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 13px;
+    background: rgba(127,127,127,0.14); padding: 1px 5px; border-radius: 5px; }
   .card .origin { font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; word-break: break-all; }
   #pairCode {
     -webkit-appearance: none; appearance: none; width: 100%; box-sizing: border-box;
-    font: 700 28px/1.2 -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-    letter-spacing: 8px; text-align: center; padding: 12px 8px 12px 16px;
-    border-radius: 14px; border: 1px solid var(--hairline);
-    background: rgba(127,127,127,0.10); color: var(--text);
+    font: 500 24px/1.2 ui-monospace, "SF Mono", Menlo, monospace;
+    letter-spacing: 6px; text-align: center; padding: 14px 8px 14px 14px; margin-top: 4px;
+    border-radius: 12px; border: 1px solid var(--hairline);
+    background: transparent; color: var(--text);
   }
-  #pairCode:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .card .err { min-height: 18px; font-size: 13px; font-weight: 600; color: #ff453a; }
+  #pairCode:focus { outline: none; border-color: var(--accent); }
+  #pairCode::placeholder { color: var(--text-dim); opacity: .5; letter-spacing: 6px; }
+  .card .err { min-height: 16px; font-size: 13px; font-weight: 500; color: #ff453a; }
   .card button.primary {
-    -webkit-appearance: none; appearance: none; width: 100%; padding: 12px 18px;
-    border-radius: 14px; border: none; background: var(--accent); color: #fff;
-    font: inherit; font-weight: 700; cursor: pointer; box-shadow: 0 3px 12px rgba(10,132,255,0.5);
+    -webkit-appearance: none; appearance: none; width: 100%; padding: 13px 18px;
+    border-radius: 12px; border: none; background: var(--accent); color: #fff;
+    font: 600 15px/1 -apple-system, system-ui, sans-serif; cursor: pointer;
   }
+  .card button.primary:active { opacity: .9; }
   .card button.ghost {
-    -webkit-appearance: none; appearance: none; width: 100%; padding: 11px 18px;
-    border-radius: 14px; border: 1px solid var(--hairline); background: transparent;
-    color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+    -webkit-appearance: none; appearance: none; align-self: center; margin-top: 4px;
+    padding: 8px 14px; border-radius: 10px; border: none; background: transparent;
+    color: var(--text-dim); font: 500 14px/1 -apple-system, system-ui, sans-serif; cursor: pointer;
   }
+  .card button.ghost:hover { color: var(--text); }
   .spinner {
-    width: 34px; height: 34px; border-radius: 50%;
+    width: 30px; height: 30px; border-radius: 50%; align-self: center;
     border: 3px solid var(--hairline); border-top-color: var(--accent);
-    animation: orgpad-spin 0.9s linear infinite;
+    animation: orgdraw-spin 0.9s linear infinite;
   }
-  @keyframes orgpad-spin { to { transform: rotate(360deg); } }
+  @keyframes orgdraw-spin { to { transform: rotate(360deg); } }
 
-  /* ---- Toast ---- */
   #toast {
     position: fixed; left: 50%; transform: translateX(-50%);
     top: calc(var(--safe-t) + 62px); padding: 10px 16px; border-radius: 14px;
@@ -152,66 +151,63 @@
 <body>
   <div id="tldraw"></div>
 
-  <!-- OrgPad's Done/Cancel + style toggle are injected into tldraw's own
+  <!-- OrgDraw's Done/Cancel + style toggle are injected into tldraw's own
        top-right chrome (SharePanel) from the module below, so they read as
        part of the app rather than a separate floating bar. -->
 
   <div id="toast" class="glass"></div>
 
-  <!-- Pairing / waiting / done / load-error overlays -->
   <div id="screenLoading" class="overlay">
-    <div class="card glass">
+    <div class="card">
       <div class="spinner"></div>
-      <h1>Loading canvas…</h1>
+      <h1>Loading</h1>
       <p class="hint">Fetching the drawing engine.</p>
     </div>
   </div>
 
   <div id="screenError" class="overlay" hidden>
-    <div class="card glass">
-      <h1>Couldn't load the canvas</h1>
-      <p class="hint" id="errorHint">The drawing engine failed to load. This page needs internet access on this device the first time. Check the connection and reload.</p>
+    <div class="card">
+      <h1>Can't load the canvas</h1>
+      <p class="hint" id="errorHint">The drawing engine didn't load. This page needs internet the first time it opens. Check the connection and reload.</p>
       <button class="primary" onclick="location.reload()">Reload</button>
     </div>
   </div>
 
   <div id="screenPairing" class="overlay" hidden>
-    <div class="card glass">
-      <h1>Pair with Emacs</h1>
+    <div class="card">
+      <h1>Enter your code</h1>
+      <p class="hint">Emacs shows a 6-digit code after you run <code>M-x org-draw-setup</code>.</p>
       <input id="pairCode" inputmode="numeric" pattern="[0-9]*" maxlength="6"
-             autocomplete="one-time-code" placeholder="000000" aria-label="6-digit pairing code">
-      <button class="primary" id="btnPair">Pair</button>
+             autocomplete="one-time-code" placeholder="000000" aria-label="pairing code">
       <p class="err" id="pairError"></p>
-      <p class="hint">Enter the 6-digit code from M-x org-pad-setup in Emacs.</p>
+      <button class="primary" id="btnPair">Connect</button>
     </div>
   </div>
 
   <div id="screenWaiting" class="overlay" hidden>
-    <div class="card glass">
+    <div class="card">
       <div class="spinner"></div>
-      <h1>Waiting for a drawing…</h1>
+      <h1>Ready</h1>
+      <p class="hint">Keep this tab open. Run <code>M-x org-draw</code> in Emacs and your drawing shows up here.</p>
       <p class="origin" id="waitingOrigin"></p>
-      <button class="ghost" id="btnUnpair">Unpair</button>
+      <button class="ghost" id="btnUnpair">Disconnect</button>
     </div>
   </div>
 
   <div id="screenDone" class="overlay" hidden>
-    <div class="card glass">
-      <h1 id="doneTitle">Sent ✓</h1>
+    <div class="card">
+      <h1 id="doneTitle">Sent</h1>
       <p class="hint" id="doneHint">This tab was opened for one figure. You can close it.</p>
     </div>
   </div>
 
 <script type="module">
-// ============================================================================
-// OrgPad web canvas — tldraw edition.
-// tldraw (github.com/tldraw/tldraw) is the drawing surface: pressure ink, camera
-// pan/zoom, palm rejection, shapes, undo/redo — all battle-tested. This file is
-// only the glue: it mounts tldraw and drives the OrgPad receiver protocol
+// OrgDraw web canvas (tldraw edition). tldraw is the drawing surface (pressure
+// ink, pan/zoom, palm rejection, shapes, undo/redo); this file is the glue that
+// mounts it and drives the OrgDraw receiver protocol
 // (pair -> long-poll /session -> export PNG + snapshot -> POST /result).
 // The exported figure's re-editable data is a tldraw store snapshot (JSON),
 // carried in the same opaque "drawing" slot the server already round-trips.
-// ============================================================================
 
 let Tldraw, getSnapshot, loadSnapshot, React, createRoot;
 try {
@@ -226,8 +222,7 @@ try {
   throw err;
 }
 
-// -------------------- config (server-injected or URL) --------------------
-var rawCfg = window.ORGPAD_CONFIG || {};
+var rawCfg = window.ORGDRAW_CONFIG || {};
 var qs = new URLSearchParams(location.search);
 rawCfg = {
   token_header: rawCfg.token_header,
@@ -243,10 +238,11 @@ rawCfg = {
   name: rawCfg.name || qs.get("name"),
   drawing: (rawCfg.drawing !== undefined && rawCfg.drawing !== null) ? rawCfg.drawing : qs.get("drawing"),
   background: rawCfg.background || qs.get("background"),
-  resultUrl: rawCfg.resultUrl
+  resultUrl: rawCfg.resultUrl,
+  require_pairing: rawCfg.require_pairing
 };
 
-var TOKEN_KEY = "orgpad.token";
+var TOKEN_KEY = "orgdraw.token";
 function readStoredToken() { try { return localStorage.getItem(TOKEN_KEY); } catch (e) { return null; } }
 function writeStoredToken(t) { try { if (t) localStorage.setItem(TOKEN_KEY, t); else localStorage.removeItem(TOKEN_KEY); } catch (e) {} }
 
@@ -254,13 +250,18 @@ function resolveConfig(cfg, stored) {
   cfg = cfg || {};
   var session_id = cfg.session_id || null;
   var token = cfg.token || stored || null;
-  var screen = session_id ? "drawing" : (token ? "waiting" : "pairing");
+  // Pairing is only required when the server says so; otherwise skip the code
+  // screen and go straight to receiving.
+  var requirePairing = !!cfg.require_pairing;
+  var screen = session_id ? "drawing"
+             : (token ? "waiting" : (requirePairing ? "pairing" : "waiting"));
   return {
     screen: screen, session_id: session_id, token: token,
+    require_pairing: requirePairing,
     mode: cfg.mode || "new", name: cfg.name || "",
     drawing: (cfg.drawing != null) ? cfg.drawing : null,
     background: cfg.background || "transparent",
-    token_header: cfg.token_header || "X-OrgPad-Token",
+    token_header: cfg.token_header || "X-OrgDraw-Token",
     pair_path: cfg.pair_path || "/pair",
     session_path: cfg.session_path || "/session",
     // Prefer the relative /result (same origin the page loaded from) over any
@@ -282,23 +283,20 @@ var CONFIG = resolveConfig(rawCfg, readStoredToken());
   } catch (e) {}
 })();
 
-// Standalone demo: opened as a file (or ?demo=1). No server — draw locally,
+// Standalone demo: opened as a file (or ?demo=1). No server, so draw locally,
 // "Done" downloads the PNG. The fastest way to try the canvas.
 var DEMO = (function () {
   try { return qs.get("demo") === "1" || location.protocol === "file:"; } catch (e) { return false; }
 })();
 if (DEMO) { CONFIG.screen = "drawing"; CONFIG.session_id = "demo"; CONFIG.token = null; CONFIG.mode = "new"; }
 
-// -------------------- base64 helpers --------------------
 function utf8ToB64(s) { var b = new TextEncoder().encode(s), bin = ""; for (var i = 0; i < b.length; i++) bin += String.fromCharCode(b[i]); return btoa(bin); }
 function b64ToUtf8(b) { var bin = atob(b), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return new TextDecoder().decode(a); }
 async function blobToB64(blob) { var a = new Uint8Array(await blob.arrayBuffer()), bin = ""; for (var i = 0; i < a.length; i++) bin += String.fromCharCode(a[i]); return btoa(bin); }
 
-// -------------------- theme --------------------
 var theme = (window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches) ? "dark" : "light";
 document.documentElement.setAttribute("data-theme", theme);
 
-// -------------------- tldraw editor bridge --------------------
 var editor = null;
 var pendingLoad;               // snapshot string queued before the editor mounts
 var editorReadyResolvers = [];
@@ -328,7 +326,7 @@ function applyDrawing(snapshotStr) {
   clearCanvas();
   if (snapshotStr) {
     try { loadSnapshot(editor.store, JSON.parse(snapshotStr)); }
-    catch (e) { /* not a tldraw snapshot (or legacy) — leave blank */ }
+    catch (e) { /* not a tldraw snapshot (or legacy); leave blank */ }
   }
   try { editor.zoomToFit({ animation: { duration: 0 } }); } catch (e) {}
 }
@@ -340,7 +338,7 @@ async function exportResult() {
   if (ids.length) {
     // Export ink on a transparent background, then bake the requested figure
     // background underneath. tldraw's toImage `background` is only a boolean,
-    // so it can't honor "light"/"dark"/a custom color — composite it ourselves.
+    // so it can't honor "light"/"dark"/a custom color; composite it ourselves.
     var out = await editor.toImage(ids, { format: "png", background: false, scale: 2, padding: 16 });
     var blob = out.blob;
     var bg = CONFIG.background;
@@ -362,36 +360,37 @@ async function bakeBackground(blob, color) {
   return await new Promise(function (res) { c.toBlob(res, "image/png"); });
 }
 
-// Toggle tldraw's style panel (color/size/dash) on and off.
 function toggleStylePanel() {
   var c = document.getElementById("tldraw");
-  var hidden = c.classList.toggle("orgpad-hide-style");
+  var hidden = c.classList.toggle("orgdraw-hide-style");
   var btn = document.getElementById("btnStyle");
   if (btn) btn.classList.toggle("on", !hidden);
 }
 var SLIDERS_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h10M18 18h2"/><circle cx="16" cy="6" r="2" fill="currentColor" stroke="none"/><circle cx="8" cy="12" r="2" fill="currentColor" stroke="none"/><circle cx="16" cy="18" r="2" fill="currentColor" stroke="none"/></svg>';
+var CLOSE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
 
-// OrgPad's own controls, injected into tldraw's top-right SharePanel zone so
+// OrgDraw's own controls, injected into tldraw's top-right SharePanel zone so
 // they read as native chrome. Buttons keep their ids (btnDone/btnCancel) so the
 // e2e test and any external wiring still find them.
-function OrgPadShare() {
+function OrgDrawShare() {
   var h = React.createElement;
-  return h("div", { className: "orgpad-share" },
-    h("button", { id: "btnStyle", className: "orgpad-mini on", title: "Show/hide the style panel",
+  return h("div", { className: "orgdraw-share" },
+    h("button", { id: "btnStyle", className: "orgdraw-mini on", title: "Show/hide the style panel",
                   "aria-label": "Toggle style panel", onClick: toggleStylePanel,
                   dangerouslySetInnerHTML: { __html: SLIDERS_SVG } }),
-    h("button", { id: "btnCancel", className: "orgpad-mini", title: "Cancel", "aria-label": "Cancel",
-                  onClick: function () { cancel(); } }, "✕"),
-    h("button", { id: "btnDone", className: "orgpad-done", onClick: function () { done(); } }, "Done")
+    h("button", { id: "btnCancel", className: "orgdraw-mini", title: "Cancel", "aria-label": "Cancel",
+                  onClick: function () { cancel(); },
+                  dangerouslySetInnerHTML: { __html: CLOSE_SVG } }),
+    h("button", { id: "btnDone", className: "orgdraw-done", onClick: function () { done(); } }, "Done")
   );
 }
 
-// Mount tldraw. Drop in a tldraw license key (window.ORGPAD_TLDRAW_LICENSE, or a
-// `tldraw_license` field on the injected config) to remove the watermark.
+// A tldraw license key (window.ORGDRAW_TLDRAW_LICENSE, or a `tldraw_license`
+// field on the injected config) removes the watermark.
 // Hide the chrome a single-figure tool doesn't need (pages, minimap, debug).
-var LICENSE = (window.ORGPAD_CONFIG && window.ORGPAD_CONFIG.tldraw_license) || window.ORGPAD_TLDRAW_LICENSE || undefined;
+var LICENSE = (window.ORGDRAW_CONFIG && window.ORGDRAW_CONFIG.tldraw_license) || window.ORGDRAW_TLDRAW_LICENSE || undefined;
 var TL_COMPONENTS = {
-  SharePanel: OrgPadShare,
+  SharePanel: OrgDrawShare,
   PageMenu: null,
   Minimap: null,
   DebugMenu: null,
@@ -401,11 +400,10 @@ createRoot(document.getElementById("tldraw")).render(
   React.createElement(Tldraw, { onMount: onEditorMount, inferDarkMode: false, licenseKey: LICENSE, components: TL_COMPONENTS })
 );
 
-// -------------------- UI helpers --------------------
 function el(id) { return document.getElementById(id); }
-// Status lives in the tab title now (no persistent on-canvas bar) — user-facing
+// Status lives in the tab title (no persistent on-canvas bar); user-facing
 // transitions still surface as toasts.
-function setStatus(t) { document.title = t ? ("OrgPad — " + t) : "OrgPad — Draw"; }
+function setStatus(t) { document.title = t ? ("OrgDraw: " + t) : "OrgDraw"; }
 var toastTimer = null;
 function toast(msg) {
   var t = el("toast"); if (!t) return;
@@ -418,7 +416,6 @@ function showScreen(name) {
   SCREENS.forEach(function (id) { var e = el(id); if (e) e.hidden = (id !== name); });
 }
 
-// -------------------- receiver protocol --------------------
 var isPerSessionMode = (CONFIG.screen === "drawing" && !DEMO);
 var pollAbort = null, pollGeneration = 0;
 var BACKOFF = [1, 2, 4, 8, 16, 30], backoffIdx = 0;
@@ -435,6 +432,8 @@ function enterPairing() {
 function enterWaiting() {
   showScreen("screenWaiting");
   var o = el("waitingOrigin"); if (o) o.textContent = location.origin;
+  // Nothing to disconnect from when pairing isn't required.
+  var unpair = el("btnUnpair"); if (unpair) unpair.hidden = !CONFIG.require_pairing;
   backoffReset(); startLongPoll();
 }
 function enterDrawingForSession(parsed) {
@@ -521,9 +520,9 @@ async function submitPair() {
       var data = await res.json();
       if (data && data.token) { writeStoredToken(data.token); CONFIG.token = data.token; enterWaiting(); return; }
     }
-    if (errEl) errEl.textContent = "Pairing failed — check the code.";
+    if (errEl) errEl.textContent = "Wrong or expired code.";
   } catch (e) {
-    if (errEl) errEl.textContent = "Pairing failed — check the code.";
+    if (errEl) errEl.textContent = "Wrong or expired code.";
   } finally { if (btn) btn.disabled = false; }
 }
 function doUnpair() {
@@ -532,38 +531,37 @@ function doUnpair() {
   writeStoredToken(null); CONFIG.token = null; enterPairing();
 }
 
-// -------------------- done / cancel --------------------
 function downloadDemoPNG(png) {
   var a = document.createElement("a");
-  a.href = "data:image/png;base64," + png; a.download = "orgpad-figure.png";
+  a.href = "data:image/png;base64," + png; a.download = "orgdraw-figure.png";
   document.body.appendChild(a); a.click(); a.remove();
-  toast("Saved orgpad-figure.png");
+  toast("Saved orgdraw-figure.png");
 }
 var busy = false;
 async function done() {
   if (busy) return;
   busy = true;
   var btn = el("btnDone"); if (btn) btn.disabled = true;
-  setStatus("exporting…");
+  setStatus("exporting...");
   try {
     var out = await exportResult();
     if (!out.shapes) { toast("Draw something first"); setStatus(CONFIG.name ? ("editing " + CONFIG.name) : "new figure"); return; }
     if (DEMO) { downloadDemoPNG(out.png); setStatus("saved"); return; }
-    if (!CONFIG.session_id || !CONFIG.token) { toast("No session — standalone"); return; }
-    setStatus("uploading…");
+    if (!CONFIG.session_id) { toast("No active session"); return; }
+    setStatus("uploading...");
     var headers = { "Content-Type": "application/json" }; headers[CONFIG.token_header] = CONFIG.token;
     var body = { session_id: CONFIG.session_id, png: out.png, drawing: utf8ToB64(out.drawing), format: "web" };
     var res = await fetch(CONFIG.result_path, { method: "POST", headers: headers, body: JSON.stringify(body) });
-    if (res.ok) { setStatus("sent ✓"); toast("Sent to Emacs"); onSessionFinished(); }
-    else if (res.status === 401) { setStatus("unauthorized"); toast("Token rejected — pair again"); onTokenRejected(); }
-    else { setStatus("error " + res.status); toast("Upload failed (" + res.status + ") — retry Done"); }
+    if (res.ok) { setStatus("sent"); toast("Sent to Emacs"); onSessionFinished(); }
+    else if (res.status === 401) { setStatus("unauthorized"); toast("Token rejected"); onTokenRejected(); }
+    else { setStatus("error " + res.status); toast("Upload failed (" + res.status + ")"); }
   } catch (e) {
-    setStatus("error"); toast("Export/upload failed — retry Done");
+    setStatus("error"); toast("Upload failed");
   } finally { busy = false; if (btn) btn.disabled = false; }
 }
 async function cancel() {
   if (DEMO) { clearCanvas(); toast("Cleared"); return; }
-  if (!CONFIG.session_id || !CONFIG.token) { toast("Standalone — nothing to cancel"); return; }
+  if (!CONFIG.session_id) { toast("Nothing to cancel"); return; }
   try {
     var headers = { "Content-Type": "application/json" }; headers[CONFIG.token_header] = CONFIG.token;
     await fetch(CONFIG.cancel_path, { method: "POST", headers: headers, body: JSON.stringify({ session_id: CONFIG.session_id }) });
@@ -572,8 +570,7 @@ async function cancel() {
   onSessionFinished();
 }
 
-// -------------------- wiring + boot --------------------
-// Done/Cancel are wired via onClick in OrgPadShare (tldraw's SharePanel).
+// Done/Cancel are wired via onClick in OrgDrawShare (tldraw's SharePanel).
 var pairBtn = el("btnPair"); if (pairBtn) pairBtn.addEventListener("click", submitPair);
 var pairInput = el("pairCode"); if (pairInput) pairInput.addEventListener("keydown", function (e) { if (e.key === "Enter") submitPair(); });
 var unpairBtn = el("btnUnpair"); if (unpairBtn) unpairBtn.addEventListener("click", doUnpair);
@@ -594,7 +591,7 @@ if (CONFIG.screen === "drawing") {
 }
 
 // Expose for the e2e test / debugging.
-window.__orgpad = {
+window.__orgdraw = {
   get editor() { return editor; },
   CONFIG: CONFIG, exportResult: exportResult,
   enterDrawingForSession: enterDrawingForSession, onSessionFinished: onSessionFinished,

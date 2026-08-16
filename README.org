@@ -1,14 +1,15 @@
-* org-pad.el
-:PROPERTIES:
-:CUSTOM_ID: org-pad.el
-:END:
-Seamless drawing into org-mode — from your iPad, or any device, in a browser.
+* org-draw
+Seamless drawing into org-mode.
 
 # [[https://img.shields.io/badge/license-GPLv3-blue.svg]] [[https://img.shields.io/badge/Emacs-28.1%2B-7F5AB6.svg]] [[https://img.shields.io/badge/canvas-tldraw-1e88e5.svg]] [[https://img.shields.io/badge/no%20app-just%20a%20browser-2ea44f.svg]]
 
-org-pad lets you draw on your iPad with Apple Pencil — or on any device in a
-web browser — and have the result land in your org-mode buffer as an inline,
-re-editable figure.
+org-draw lets you draw inside Org-mode using any device with a web browser and have the
+result land in org-mode buffer as an inline, re-editable, portable figure.
+
+Here's an example:
+
+
+[[file:figures/fig-20260816-065931.png]]
 
 ** Demo
 :PROPERTIES:
@@ -20,117 +21,50 @@ re-editable figure.
 
 [[file:figures/fig-20260814-204400.png]]
 
-** Get started, one-time setup
+** Get started
 :PROPERTIES:
 :CUSTOM_ID: one-time-setup
 :END:
-No app install, no App Store, no developer account — just a browser.
 
-1. In Emacs, run =M-x org-pad-setup=. This starts the org-pad server,
-   generates a fresh 6-digit pairing code, and opens a =*org-pad setup*=
-   buffer listing one or more receiver URLs, one per LAN address Emacs can
-   see (e.g. =http://192.168.1.23:8777/canvas=, plus an IP-stable =.local=
-   address that keeps working even when your IP changes).
-2. On the iPad (or any device on the same network), open one of those
-   =/canvas= URLs in a browser. The first time, enter the 6-digit code to
-   pair; the browser stores its own token right on the page. Leave the tab
-   open.
-3. That tab is now a *receiver*: it long-polls the server and picks up every
-   drawing request. The code is single-use and expires after 5 wrong
-   attempts — re-run =M-x org-pad-setup= to get a new one.
+=M-x org-draw= copies the
+receiver URL to your clipboard. Open it on your machine or any device in your network.
 
-You only need to pair once per browser (until you clear its stored token, or
-=org-pad-token-file= on the Emacs side).
+If other people share your network and you don't want them reaching the server, set
+=org-draw-require-pairing= to non-nil. Then the page shows a code-entry screen and
+=org-draw-setup= prints a single-use 6-digit code to type in (it expires after 5 wrong
+attempts).
 
-** Usage
-:PROPERTIES:
-:CUSTOM_ID: daily-use
-:END:
-- Place point where you want a new figure and run =M-x org-pad-draw= (or bind
-  it to a key). Emacs starts the server if needed and queues a “new drawing”
-  request; the open receiver tab picks it up immediately and switches into
-  drawing mode. When you tap *Done*, the PNG comes back and org-pad inserts an
-  =[[file:...]]= link to it at point.
-- Place point on an existing org-pad figure link and run =M-x org-pad-draw=
-  (or =M-x org-pad-edit=) to re-open it for editing. The original strokes are
-  stored inside the PNG, so the canvas reconstructs your drawing exactly as
-  you left it. Editing a plain PNG that org-pad didn't produce (no embedded
-  strokes) is refused with a clear error.
-- =org-pad-draw= is DWIM: on a re-editable figure link it edits; anywhere else
-  it creates a new figure at point.
-- The server keeps running across draw requests; =M-x org-pad-server-stop=
-  shuts it down.
-- =M-x org-pad-menu= opens a transient menu (draw / edit / setup, figure
-  background, server start/stop) — a single entry point if you'd rather not
-  remember the commands.
-
-** The canvas
-:PROPERTIES:
-:CUSTOM_ID: the-canvas
-:END:
-The drawing surface is [[https://github.com/tldraw/tldraw][tldraw]] — the professional infinite-canvas engine —
-with pressure-sensitive Apple Pencil ink, one- and two-finger pan, pinch-zoom,
-palm rejection, shapes, arrows, text and undo/redo. Pressing *Done* exports a
-PNG cropped to your drawing and stores a tldraw snapshot alongside it, so the
-figure re-opens in the canvas exactly as you left it.
-
-Two things to know:
-
-- tldraw is loaded from a CDN, so the device needs internet access the first
-  time it opens the page (on an offline network the page shows a clear message
-  instead of a blank screen).
-- tldraw shows a small "made with tldraw" watermark under its free license;
-  set a license key to remove it (=window.ORGPAD_TLDRAW_LICENSE=, or a
-  =tldraw_license= field on the injected config).
+The drawing surface is [[https://github.com/tldraw/tldraw][tldraw]]. tldraw is loaded from a CDN, so the device needs internet access the first time it opens the page (on an offline network the page shows a clear message
+instead of a blank screen).
 
 ** Customization
 :PROPERTIES:
 :CUSTOM_ID: customization
 :END:
-All options live in the =org-pad= customization group
-(=M-x customize-group RET org-pad RET=), or set them directly in your init
-file:
 
-- =org-pad-port= (default =8777=)
-- =org-pad-directory= (default ="figures"=)
-- =org-pad-file-name-function= (default =org-pad-default-file-name=)
-- =org-pad-insert-attr-width= (default =nil=) when set to an integer pixel
-  width, org-pad inserts a =#+ATTR_ORG: :width N= line above the link to a
+- =org-draw-port= (default =8777=)
+- =org-draw-directory= (default ="figures"=)
+- =org-draw-file-name-function= (default =org-draw-default-file-name=)
+- =org-draw-insert-attr-width= (default =nil=) when set to an integer pixel
+  width, org-draw inserts a =#+ATTR_ORG: :width N= line above the link to a
   newly created figure, so it displays at a fixed width inline. Leave it =nil=
   to skip the ATTR line entirely.
-- =org-pad-token-file= (default =<user-emacs-directory>/org-pad-tokens=)
-- =org-pad-figure-background= (default =transparent=) the background baked
+- =org-draw-require-pairing= (default =nil=) whether a browser must enter a
+  6-digit code before it can draw. Off by default (any browser on your LAN can
+  receive drawings). Set to non-nil on a shared network to require pairing.
+- =org-draw-token-file= (default =<user-emacs-directory>/org-draw-tokens=) where
+  paired-device tokens are stored (only used when =org-draw-require-pairing= is on)
+- =org-draw-figure-background= (default =transparent=) the background baked
   behind a figure's ink in the exported PNG. =transparent= keeps true ink
   colors and shows the figure against your org buffer's background (so a white
   pen shows in a dark theme and a black pen in a light theme); or set it to
   =white=, =dark=, or a CSS color string to bake that behind every figure.
-- =org-pad-web-canvas-file= path to the web canvas HTML served at =/canvas=
+- =org-draw-web-canvas-file= path to the web canvas HTML served at =/canvas=
   (defaults to =web/canvas.html= shipped with the package).
-- =org-pad-web-open-function= (default =nil=) when non-nil (e.g. =browse-url=),
-  =org-pad-draw= also opens the per-session =/canvas= URL on the machine
+- =org-draw-web-open-function= (default =nil=) when non-nil (e.g. =browse-url=),
+  =org-draw= also opens the per-session =/canvas= URL on the machine
   running Emacs, in addition to the receiver tab picking it up. Leave =nil= to
   rely solely on the open receiver tab.
-
-** Notes
-:PROPERTIES:
-:CUSTOM_ID: notes
-:END:
-Every figure org-pad writes is a normal PNG with a private ancillary chunk
-named =orPd= inserted before =IEND=, containing a format byte followed by the
-drawing data (a tldraw snapshot — strokes, not pixels) and covered by the
-standard PNG CRC32 like any other chunk. This is what makes re-editing
-possible: =org-pad-edit= reads the =orPd= chunk back out and ships it to the
-canvas, which restores your drawing exactly. PNGs without an =orPd= chunk
-(screenshots, images from elsewhere) are treated as non-editable.
-
-Pending draw requests live in memory in the running Emacs process. If you
-restart Emacs (or it crashes) before the receiver tab has picked up and
-returned a queued drawing, that request is lost and you'll need to run
-=org-pad-draw= again.
-
-Tested on macOS; Linux and other platforms work too — the server is pure
-Elisp and platform-agnostic. Prefer the =.local= receiver URL: it resolves via
-mDNS to the machine's current IP, so it keeps working even when the IP changes.
 
 ** License
 :PROPERTIES:

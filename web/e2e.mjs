@@ -1,20 +1,7 @@
-// e2e.mjs — end-to-end test of the tldraw web canvas against a mock OrgPad
+// e2e.mjs: end-to-end test of the tldraw web canvas against a mock OrgDraw
 // server, driven through a real headless browser (Playwright/Chromium).
-//
-// It boots a throwaway HTTP server that speaks the OrgPad receiver protocol
-// (/canvas, /pair, /session, /result), loads the real web/canvas.html in
-// Chromium, and drives the whole flow the way an iPad would:
-//   pairing -> POST /pair -> waiting -> GET /session (204 then 200) ->
-//   drawing -> draw a stroke with the pointer -> Done -> POST /result,
-// then asserts the uploaded body carries a PNG and a valid tldraw snapshot.
-// A second pass feeds that snapshot back as an "edit" session and asserts the
-// shapes are restored.
-//
-// Requires Playwright + Chromium. If Playwright isn't installed the test SKIPS
-// (exit 0) so a fresh checkout's `make web` doesn't hard-fail; install it with
-//   npm i -D playwright && npx playwright install chromium
-// (or run with NODE_PATH pointing at an existing Playwright install).
-//
+// If Playwright isn't installed the test SKIPS (exit 0) so a fresh checkout's
+// `make web` doesn't hard-fail.
 // Run:  node e2e.mjs
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -26,20 +13,20 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 let chromium;
 async function loadPlaywright() {
   const cands = [];
-  if (process.env.ORGPAD_PLAYWRIGHT) cands.push(pathToFileURL(process.env.ORGPAD_PLAYWRIGHT).href); // explicit module path
-  cands.push("playwright");                                                     // normal resolution
+  if (process.env.ORGDRAW_PLAYWRIGHT) cands.push(pathToFileURL(process.env.ORGDRAW_PLAYWRIGHT).href);
+  cands.push("playwright");
   for (const c of cands) { try { const m = await import(c); if (m.chromium || (m.default && m.default.chromium)) return m.chromium || m.default.chromium; } catch {} }
   return null;
 }
 chromium = await loadPlaywright();
 if (!chromium) {
-  console.log("SKIP e2e.mjs — Playwright not installed (npm i -D playwright && npx playwright install chromium).");
+  console.log("SKIP e2e.mjs: Playwright not installed (npm i -D playwright && npx playwright install chromium).");
   process.exit(0);
 }
 
 const HTML = readFileSync(join(__dirname, "canvas.html"), "utf-8");
 function pageWithConfig(cfg) {
-  const inject = `<script>window.ORGPAD_CONFIG=${JSON.stringify(cfg)}</script>`;
+  const inject = `<script>window.ORGDRAW_CONFIG=${JSON.stringify(cfg)}</script>`;
   return HTML.includes("</head>") ? HTML.replace("</head>", inject + "</head>") : inject + HTML;
 }
 
@@ -47,9 +34,8 @@ function readBody(req) {
   return new Promise((res) => { let b = ""; req.on("data", (c) => (b += c)); req.on("end", () => res(b)); });
 }
 
-// ---- mock server state ----
 const server = {
-  config: {},              // config injected into /canvas
+  config: {},
   sessionPayload: null,    // what GET /session returns on the "ready" call
   sessionCallsUntilReady: 1,
   sessionCalls: 0,
@@ -102,14 +88,15 @@ async function drawStroke(page, pts) {
   for (const [x, y] of pts.slice(1)) await page.mouse.move(x, y, { steps: 6 });
   await page.mouse.up();
 }
-const editorReady = (page) => page.waitForFunction(() => window.__orgpad && window.__orgpad.editor, null, { timeout: 30000 });
+const editorReady = (page) => page.waitForFunction(() => window.__orgdraw && window.__orgdraw.editor, null, { timeout: 30000 });
 
-// ============================ Scenario A: new figure ============================
+// Scenario A: new figure
 console.log("== receiver: pair -> wait -> draw -> Done ==");
-// Mirror the exact field set org-pad--canvas-config injects (absolute resultUrl
+// Mirror the exact field set org-draw--canvas-config injects (absolute resultUrl
 // + a relative result_path alias) so we exercise the real precedence.
-server.config = { token_header: "X-OrgPad-Token", pair_path: "/pair", session_path: "/session",
-                  resultUrl: ORIGIN + "/result", result_path: "/result", cancel_path: "/cancel", format: "web" };
+server.config = { token_header: "X-OrgDraw-Token", pair_path: "/pair", session_path: "/session",
+                  resultUrl: ORIGIN + "/result", result_path: "/result", cancel_path: "/cancel",
+                  require_pairing: true, format: "web" };   // exercise the code screen
 // custom color background exercises the exportResult -> bakeBackground composite path
 server.sessionPayload = { session_id: "s-new", mode: "new", name: "", background: "#204030", format: "web" };
 server.sessionCallsUntilReady = 2;   // one 204, then the 200
@@ -119,15 +106,13 @@ let snapshotB64 = null;
 {
   const page = await newPage();
   await page.goto(ORIGIN + "/canvas", { waitUntil: "load" });
-  // pairing screen
   await page.waitForSelector("#screenPairing:not([hidden])", { timeout: 30000 });
   t("boots to the pairing screen (no token)", true);
   await page.fill("#pairCode", "123456");
   await page.click("#btnPair");
-  // it should reach the drawing surface once /session returns 200
   await editorReady(page);
   await page.waitForSelector("#btnDone", { timeout: 30000 });   // Done lives in tldraw's SharePanel now
-  // Wait until the drawing surface is actually active (all overlays hidden) —
+  // Wait until the drawing surface is actually active (all overlays hidden) -
   // tldraw + #btnDone exist from boot behind the pairing/waiting overlays, so
   // gate the draw on the overlays being gone, not just on the button existing.
   await page.waitForFunction(() =>
@@ -136,10 +121,10 @@ let snapshotB64 = null;
     null, { timeout: 30000 });
   t("POST /pair sent the exact {code} body", server.pairBody && server.pairBody.code === "123456");
   await drawStroke(page, [[360, 300], [430, 250], [520, 340], [600, 280]]);
-  const shapes = await page.evaluate(() => window.__orgpad.editor.getCurrentPageShapeIds().size);
+  const shapes = await page.evaluate(() => window.__orgdraw.editor.getCurrentPageShapeIds().size);
   t("a stroke was drawn on the tldraw surface", shapes >= 1);
   await page.click("#btnDone");
-  for (let i = 0; i < 200 && !server.resultBody; i++) await new Promise((r) => setTimeout(r, 50)); // wait for the actual POST
+  for (let i = 0; i < 200 && !server.resultBody; i++) await new Promise((r) => setTimeout(r, 50));
   const rb = server.resultBody;
   t("POST /result received", !!rb);
   t("/result carries session_id + format:web", rb && rb.session_id === "s-new" && rb.format === "web");
@@ -151,11 +136,11 @@ let snapshotB64 = null;
   await page.context().close();
 }
 
-// ============================ Scenario B: edit restore ============================
+// Scenario B: edit restore
 console.log("== edit: server sends a snapshot -> shapes restored ==");
 {
   const editCfg = {
-    token_header: "X-OrgPad-Token", pair_path: "/pair", session_path: "/session",
+    token_header: "X-OrgDraw-Token", pair_path: "/pair", session_path: "/session",
     result_path: "/result", cancel_path: "/cancel",
     session_id: "s-edit", token: "tok-e2e", mode: "edit", name: "fig-1",
     background: "transparent", drawing: snapshotB64
@@ -165,8 +150,35 @@ console.log("== edit: server sends a snapshot -> shapes restored ==");
   await page.goto(ORIGIN + "/canvas", { waitUntil: "load" });
   await editorReady(page);
   await page.waitForTimeout(400);
-  const shapes = await page.evaluate(() => window.__orgpad.editor.getCurrentPageShapeIds().size);
+  const shapes = await page.evaluate(() => window.__orgdraw.editor.getCurrentPageShapeIds().size);
   t("edit session restored the saved shapes into tldraw", shapes >= 1);
+  await page.context().close();
+}
+
+// Scenario C: no pairing (default)
+console.log("== no pairing: boots straight to Ready, no code screen ==");
+{
+  server.config = { token_header: "X-OrgDraw-Token", session_path: "/session",
+                    result_path: "/result", cancel_path: "/cancel", format: "web" }; // require_pairing omitted -> off
+  server.sessionPayload = { session_id: "s-nopair", mode: "new", name: "", background: "transparent", format: "web" };
+  server.sessionCallsUntilReady = 1; server.sessionCalls = 0; server.resultBody = null;
+  const page = await newPage();
+  await page.goto(ORIGIN + "/canvas", { waitUntil: "load" });
+  await page.waitForFunction(() =>
+    ["screenPairing", "screenWaiting", "screenDone", "screenLoading", "screenError"]
+      .every((id) => { const e = document.getElementById(id); return !e || e.hidden; }),
+    null, { timeout: 30000 });
+  await editorReady(page);
+  const pairingHidden = await page.evaluate(() => document.getElementById("screenPairing").hidden);
+  const unpairHidden = await page.evaluate(() => document.getElementById("btnUnpair").hidden);
+  t("with pairing off, never shows the code screen", pairingHidden === true);
+  t("with pairing off, the disconnect button is hidden", unpairHidden === true);
+  // the key regression: Done must upload even though there is no token
+  await drawStroke(page, [[360, 300], [430, 250], [520, 340]]);
+  await page.click("#btnDone");
+  for (let i = 0; i < 200 && !server.resultBody; i++) await new Promise((r) => setTimeout(r, 50));
+  t("with pairing off, Done still POSTs /result (no token required)",
+    !!server.resultBody && server.resultBody.session_id === "s-nopair");
   await page.context().close();
 }
 

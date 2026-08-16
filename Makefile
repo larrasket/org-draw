@@ -1,10 +1,10 @@
 EMACS ?= emacs
-EL    := org-pad.el
+EL    := org-draw.el
 
 .PHONY: test compile web clean
 
 test:
-	$(EMACS) -Q --batch -L . -l tests/org-pad-test.el \
+	$(EMACS) -Q --batch -L . -l tests/org-draw-test.el \
 		-f ert-run-tests-batch-and-exit
 
 compile:
