@@ -10,7 +10,6 @@ test:
 compile:
 	$(EMACS) -Q --batch -L . \
 		--eval '(setq byte-compile-error-on-warn t)' \
-		--eval '(setq byte-compile-docstring-max-column 100)' \
 		-f batch-byte-compile $(EL)
 
 web:

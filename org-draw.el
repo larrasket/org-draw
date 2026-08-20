@@ -1,8 +1,9 @@
-;;; org-draw --- Seamless iPad drawing into org-mode  -*- lexical-binding: t; -*-
+;;; org-draw.el --- Draw into Org from a browser  -*- lexical-binding: t; -*-
 ;; Copyright (C) 2026 Saleh
 
 ;; Author: Saleh <root@lr0.org>
 ;; Maintainer: Saleh <root@lr0.org>
+;; Assisted-by: Claude:claude-opus-4-8
 ;; Version: 0.2.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: org, multimedia, hypermedia
@@ -65,9 +66,10 @@ reach the server."
   :type 'boolean :group 'org-draw)
 
 (defcustom org-draw-copy-url t
-  "When non-nil, copy the receiver URL to the kill-ring on `org-draw-setup' and
-on the first `org-draw'/`org-draw-edit' of a session.  Set to nil to never touch
-the kill-ring; the URL is still echoed and listed in the setup buffer."
+  "Whether to copy the receiver URL to the `kill-ring'.
+When non-nil (the default), copy it on `org-draw-setup' and on the first
+`org-draw'/`org-draw-edit' of a session.  Set to nil to leave the `kill-ring'
+alone; the URL is still echoed and listed in the setup buffer."
   :type 'boolean :group 'org-draw)
 
 (defcustom org-draw-directory "figures"
@@ -332,7 +334,8 @@ PROC is the connection process whose state is cleaned up."
   (set-process-sentinel conn #'org-draw--sentinel))
 
 (defun org-draw--server-start (&optional port)
-  "Start the org-draw HTTP server on PORT (default `org-draw-port').  Return the process."
+  "Start the org-draw HTTP server on PORT (default `org-draw-port').
+Return the process."
   (when (process-live-p org-draw--server-process) (error "Org-draw server already running"))
   (setq org-draw--server-process
         (make-network-process
@@ -713,10 +716,10 @@ pairing code."
   (memq format (list org-draw-format-pkdrawing org-draw-format-web)))
 
 (defun org-draw--png-embed (png-bytes drawing-bytes &optional format)
-  "Return PNG-BYTES with an `orPd' chunk (FORMAT byte + DRAWING-BYTES) before IEND.
-FORMAT defaults to `org-draw-format-pkdrawing' (#x01) for back-compat, so existing
-two-argument callers produce byte-identical output to v1.  Both PNG-BYTES and
-DRAWING-BYTES must be unibyte.  Any existing `orPd' chunk is removed first."
+  "Return PNG-BYTES with an `orPd' chunk before IEND.
+The chunk holds a FORMAT byte followed by DRAWING-BYTES.  FORMAT defaults to
+`org-draw-format-pkdrawing' (#x01).  Both PNG-BYTES and DRAWING-BYTES must be
+unibyte; any existing `orPd' chunk is removed first."
   (let ((format (or format org-draw-format-pkdrawing)))
     (unless (and (integerp format) (<= 0 format 255))
       (error "Org-draw: bad orPd format byte: %S" format))
@@ -737,12 +740,9 @@ DRAWING-BYTES must be unibyte.  Any existing `orPd' chunk is removed first."
 
 (defun org-draw--png-extract (png-bytes)
   "Return (FORMAT . BYTES) for the embedded orPd chunk in PNG-BYTES, or nil.
-FORMAT is the leading format byte (`org-draw-format-pkdrawing' etc.); BYTES is the
-remaining stroke payload (\"\" for an embedded-but-empty drawing).  Returns nil
-for a foreign PNG with no orPd chunk (distinct from an empty payload).
-
-NOTE: v1 returned BYTES directly.  Callers wanting only the bytes should use
-`org-draw--png-extract-bytes'."
+FORMAT is the leading format byte; BYTES is the remaining stroke payload
+\(\"\" for an embedded-but-empty drawing).  Return nil for a PNG with no orPd
+chunk (distinct from an empty payload)."
   (let* ((chunks (org-draw--png-chunks png-bytes))
          (orpd (seq-find (lambda (c) (string= (plist-get c :type)
                                               org-draw--png-chunk-type))
@@ -802,9 +802,8 @@ client decides how to render it (or leaves the PNG transparent)."
 
 (defun org-draw--background-wire (&optional value)
   "Return the wire string for VALUE (default `org-draw-figure-background').
-The `white' symbol maps to \"light\" to match both the web canvas and the native
-CanvasBackground enum rawValue; `transparent'/`dark' map to their names; a colour
-string passes through verbatim.  Always a non-empty string so the field is stable."
+`white' maps to \"light\"; `transparent' and `dark' map to their names; a colour
+string passes through verbatim.  Always returns a non-empty string."
   (let ((v (or value org-draw-figure-background)))
     (cond
      ((eq v 'transparent) "transparent")
@@ -816,16 +815,16 @@ string passes through verbatim.  Always a non-empty string so the field is stabl
 ;;;; Web-open behaviour
 
 (defcustom org-draw-open-browser nil
-  "When non-nil, `org-draw' and `org-draw-edit' open the canvas in a web browser
-on the machine running Emacs (via `browse-url'), so you can draw right there.
-Leave nil to just queue the drawing for a receiver tab you keep open elsewhere.
-For a custom opener, set `org-draw-web-open-function' instead."
+  "Whether to open the canvas in a local browser when drawing.
+When non-nil, `org-draw' and `org-draw-edit' open the canvas on the machine
+running Emacs via `browse-url', so you can draw right there.  For a custom
+opener, set `org-draw-web-open-function' instead."
   :type 'boolean :group 'org-draw)
 
 (defcustom org-draw-web-open-function nil
   "Custom function to open the per-session /canvas URL on the Emacs host.
-When set, it takes precedence over `org-draw-open-browser' and is called with the
-URL string (e.g. `browse-url', or a function that targets a specific browser)."
+When set, it takes precedence over `org-draw-open-browser' and is called with
+the URL string (e.g. `browse-url')."
   :type '(choice (const :tag "None" nil) (function :tag "Opener function"))
   :group 'org-draw)
 
@@ -997,14 +996,11 @@ QUERY is the raw part after `?' (may be nil).  Values are URL-decoded."
 
 (cl-defun org-draw--canvas-config (session-id token mode background web-json
                                               &key name result-url cancel-url)
-  "Return the injected JS config block string for the web canvas.
-SESSION-ID, TOKEN, MODE, BACKGROUND, WEB-JSON and NAME populate the config
-fields.  Defines window.ORGDRAW_CONFIG = {...}.  Field names are the exact contract the
-shipped web/canvas.html reads: `session_id', `token', `mode', `name',
-`background', `resultUrl', `drawing', plus `format' (\"web\"), and the
-convenience aliases `result_path'/`cancel_path'/`token_header'.
-RESULT-URL/CANCEL-URL default to the relative \"/result\"/\"/cancel\" (the canvas
-falls back to these too); pass absolute URLs when the browser's origin differs."
+  "Return the injected JS config block for the web canvas.
+SESSION-ID, TOKEN, MODE, BACKGROUND, WEB-JSON and NAME populate
+window.ORGDRAW_CONFIG, which web/canvas.html reads.  RESULT-URL and CANCEL-URL
+default to the relative \"/result\"/\"/cancel\"; pass absolute URLs when the
+browser's origin differs."
   (let ((json (json-serialize
                (list :session_id (or session-id "")
                      :token (or token "")
@@ -1116,7 +1112,7 @@ page boots as a receiver."
                          ("Pragma" . "no-cache")))))
 
 (defun org-draw--canvas-url (host session-id token)
-  "Build the http://HOST/canvas?session=.. URL string.
+  "Build the http://HOST/canvas?session=SESSION-ID URL string.
 &token= is appended only when TOKEN is a non-empty string."
   (concat (format "http://%s/canvas?session=%s" host (url-hexify-string (or session-id "")))
           (if (and (stringp token) (not (string-empty-p token)))
