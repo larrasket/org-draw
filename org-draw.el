@@ -169,8 +169,8 @@ Signal an error on a bad signature or truncation."
     (413 "Payload Too Large") (500 "Internal Server Error") (_ "Status")))
 
 (defun org-draw--safe-delete (proc)
-  "Delete PROC if live, ignoring errors."
-  (when (process-live-p proc) (ignore-errors (delete-process proc))))
+  "Delete PROC if it is still live."
+  (when (process-live-p proc) (delete-process proc)))
 
 (defun org-draw--respond (proc status content-type body &optional headers keep-alive)
   "Write an HTTP/1.1 response to PROC and (unless KEEP-ALIVE) close it.
@@ -390,13 +390,16 @@ Return the removed session, or nil."
 
 (defun org-draw--random-bytes (n)
   "Return N cryptographically-random bytes (unibyte).  Prefers /dev/urandom."
-  (or (ignore-errors
-        (let ((s (with-temp-buffer
-                   (set-buffer-multibyte nil)
-                   (let ((coding-system-for-read 'binary))
-                     (when (zerop (call-process "head" nil t nil "-c" (number-to-string n) "/dev/urandom"))
-                       (buffer-string))))))
-          (and s (= (length s) n) s)))
+  (or (condition-case nil
+          (let ((s (with-temp-buffer
+                     (set-buffer-multibyte nil)
+                     (let ((coding-system-for-read 'binary))
+                       (when (zerop (call-process "head" nil t nil "-c"
+                                                  (number-to-string n) "/dev/urandom"))
+                         (buffer-string))))))
+            (and s (= (length s) n) s))
+        ;; No /dev/urandom (e.g. Windows) or `head' missing: fall through.
+        (error nil))
       ;; Fallback: NOT cryptographically strong (Emacs `random' PRNG).
       (let ((s (make-string n 0))) (dotimes (i n) (aset s i (random 256))) s)))
 
@@ -504,9 +507,17 @@ Return the removed session, or nil."
 ;;;; Protocol endpoints
 
 (defun org-draw--parse-json-body (req)
-  "Parse REQ's body as JSON, returning a hash-table (string keys) or nil."
-  (ignore-errors
-    (json-parse-string (decode-coding-string (or (plist-get req :body) "") 'utf-8))))
+  "Parse REQ's body as JSON, returning a hash-table (string keys) or nil.
+Return nil when the body is absent or not valid JSON (a malformed client
+request), which callers turn into a 400 response."
+  (condition-case nil
+      (json-parse-string (decode-coding-string (or (plist-get req :body) "") 'utf-8))
+    (json-parse-error nil)))
+
+(defun org-draw--safe-base64-decode (s)
+  "Base64-decode string S, or return nil when S is missing or malformed.
+Malformed base64 is a bad client request, which callers turn into a 400."
+  (and (stringp s) (condition-case nil (base64-decode-string s) (error nil))))
 
 (defun org-draw--require-token (req)
   "Return t if REQ is authorized; else send 401 and return nil.
@@ -704,7 +715,7 @@ pairing code."
 ;;;; Chunk FORMAT byte
 
 ;; Named orPd chunk FORMAT bytes.  0x02 (web) is what this package produces now;
-;; 0x01 (legacy Apple PKDrawing, from the retired native app) is still recognised
+;; 0x01 (legacy Apple PKDrawing from the retired native app) is still recognised
 ;; on read so any old figures degrade gracefully rather than erroring.
 (defconst org-draw-format-pkdrawing #x01
   "Chunk FORMAT byte identifying legacy Apple PKDrawing stroke bytes (read-only).")
@@ -949,8 +960,8 @@ When \"format\" is \"web\", the strokes are embedded as an orPd chunk with the
         (let* ((id (gethash "session_id" body))
                (session (org-draw--queue-find id))
                (format (org-draw--result-format body))
-               (png (ignore-errors (base64-decode-string (gethash "png" body))))
-               (drawing (ignore-errors (base64-decode-string (gethash "drawing" body)))))
+               (png (org-draw--safe-base64-decode (gethash "png" body)))
+               (drawing (org-draw--safe-base64-decode (gethash "drawing" body))))
           (cond
            ((not session) (org-draw--respond proc 404 "text/plain" "Unknown session"))
            ((or (not png) (not drawing))
@@ -1007,7 +1018,7 @@ browser's origin differs."
                      :mode (or mode "new")
                      :name (or name "")
                      :background (or background "transparent")
-                     ;; The canvas reads cfg.resultUrl (camelCase); keep result_path as an alias.
+                     ;; result_path aliases resultUrl (camelCase).
                      :resultUrl (or result-url "/result")
                      :result_path "/result"
                      :cancel_path (or cancel-url "/cancel")
@@ -1094,7 +1105,7 @@ page boots as a receiver."
          ;; base64 of the raw web-JSON bytes, not the raw JSON text.
          (web-json (and drawing (base64-encode-string drawing t)))
          (background (org-draw--background-wire))
-         ;; Absolute POST targets on the request's own Host so a browser reaching
+         ;; Absolute POST targets on the request's Host so a browser reaching
          ;; us by IP/MagicDNS posts back to the same origin.
          (host (or (org-draw--header req "host")
                    (format "127.0.0.1:%d" org-draw-port)))
@@ -1106,7 +1117,7 @@ page boots as a receiver."
                                                :name name :result-url result-url
                                                :cancel-url cancel-url)
                         'utf-8)
-                       ;; Never let the browser cache the canvas shell, otherwise
+                       ;; Never let the browser cache the canvas shell;
                        ;; an updated web/canvas.html is masked by a stale copy.
                        '(("Cache-Control" . "no-store, no-cache, must-revalidate")
                          ("Pragma" . "no-cache")))))
@@ -1139,10 +1150,9 @@ Prefers the first non-loopback IPv4; falls back to 127.0.0.1."
 ;;;; org-draw routing
 
 (defun org-draw--web-receiver-urls ()
-  "List of http://HOST:PORT/canvas receiver URLs; the IP-stable `.local' host first.
-Open one ONCE on the iPad (or any browser); it pairs in-page and then long-polls
-for drawings queued by `org-draw'.  Prefer the `.local' URL; it survives
-the Mac's IP changing, so you never have to re-open a new address."
+  "List of the /canvas receiver URLs, `.local' host first.
+The `.local' address is IP-stable.  Open one ONCE on the iPad or any browser;
+it pairs in-page, then long-polls for drawings queued by `org-draw'."
   (mapcar (lambda (h) (format "http://%s:%d/canvas" h org-draw-port))
           (org-draw--host-candidates)))
 
