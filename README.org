@@ -1,12 +1,13 @@
 * org-draw
 Seamless drawing into org-mode.
 
-[[https://img.shields.io/badge/license-GPLv3-blue.svg]] [[https://img.shields.io/badge/Emacs-28.1%2B-7F5AB6.svg]] [[https://img.shields.io/badge/canvas-tldraw-1e88e5.svg]] [[https://img.shields.io/badge/no%20app-just%20a%20browser-2ea44f.svg]]
-
+[[https://melpa.org/#/org-draw][https://melpa.org/packages/org-draw-badge.svg]] [[https://img.shields.io/badge/license-GPLv3-blue.svg]] 
 [[file:figures/fig-20260816-065931.png]]
 
 org-draw lets you draw inside Org-mode using any device with a web browser and have the
 result land in org-mode buffer as an inline, re-editable, portable figure.
+
+** Demo
 
 
 
@@ -17,21 +18,24 @@ result land in org-mode buffer as an inline, re-editable, portable figure.
 :CUSTOM_ID: one-time-setup
 :END:
 
-*** TODO Add to MELPA
-*** straight.el + use-package
+org-draw is on [[https://melpa.org/#/org-draw][MELPA]].
+
+*** package.el
+#+begin_src emacs-lisp
+(package-install 'org-draw)
+#+end_src
+
+Or with use-package:
 #+begin_src emacs-lisp
 (use-package org-draw
-  :straight (org-draw :type git :host github :repo "larrasket/org-draw"
-                      :files ("*.el" ("web" "web/canvas.html")))
+  :ensure t
   :commands (org-draw org-draw-edit org-draw-setup))
 #+end_src
 
 *** Doom Emacs
 In =~/.doom.d/packages.el=:
 #+begin_src emacs-lisp
-(package! org-draw
-  :recipe (:host github :repo "larrasket/org-draw"
-           :files ("*.el" ("web" "web/canvas.html"))))
+(package! org-draw)
 #+end_src
 In =~/.doom.d/config.el=:
 #+begin_src emacs-lisp
@@ -39,14 +43,19 @@ In =~/.doom.d/config.el=:
   :commands (org-draw org-draw-edit org-draw-setup))
 #+end_src
 
-*** elpaca + use-package
+*** straight.el + use-package
 #+begin_src emacs-lisp
 (use-package org-draw
-  :ensure (:host github :repo "larrasket/org-draw"
-           :files ("*.el" ("web" "web/canvas.html")))
+  :straight t
   :commands (org-draw org-draw-edit org-draw-setup))
 #+end_src
 
+*** elpaca + use-package
+#+begin_src emacs-lisp
+(use-package org-draw
+  :ensure t
+  :commands (org-draw org-draw-edit org-draw-setup))
+#+end_src
 
 ** Usage
 
@@ -95,7 +104,6 @@ message instead of a blank screen).
 - =org-draw-web-open-function= (default =nil=) a custom opener for the per-session
   =/canvas= URL; takes precedence over =org-draw-open-browser=. Set it to a
   function (e.g. one that targets a specific browser); it is called with the URL.
-
 
 ** Keybindings
 :PROPERTIES:
